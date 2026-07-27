@@ -34,12 +34,12 @@ class AppRouter {
     routes: [
       GoRoute(
         path: '/splash',
-        builder: (_, __) => const SplashScreen(),
+        builder: (context, state) => const SplashScreen(),
       ),
 
       GoRoute(
         path: '/',
-        builder: (_, __) => const LoginScreen(),
+        builder: (context, state) => const LoginScreen(),
       ),
 
       GoRoute(
@@ -52,7 +52,7 @@ class AppRouter {
 
       GoRoute(
         path: '/home',
-        builder: (_, __) => const HomeScreen(),
+        builder: (context, state) => const HomeScreen(),
       ),
     ],
   );
