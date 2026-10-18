@@ -334,36 +334,100 @@ class _NoticesScreenState extends ConsumerState<NoticesScreen> {
                                           ),
                                         ],
 
-                                        // Target Section Badges
-                                        if (targetGroups.isNotEmpty) ...[
-                                          const SizedBox(height: 12),
-                                          Row(
-                                            children: [
-                                              const Text('Target: ', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-                                              Wrap(
-                                                spacing: 6,
-                                                children: targetGroups.map<Widget>((tg) {
-                                                  final groupName = tg['class_groups']?['name'] ?? 'Group';
-                                                  return Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                    decoration: BoxDecoration(
-                                                      color: isEmergency ? Colors.red.shade100 : const Color(0xFFE2E8F0),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                    ),
-                                                    child: Text(
-                                                      groupName,
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight: FontWeight.w600,
-                                                        color: isEmergency ? Colors.red.shade900 : const Color(0xFF1E293B),
-                                                      ),
+                                        // Target Section Badges and CR Delete Option
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            if (targetGroups.isNotEmpty)
+                                              Row(
+                                                children: [
+                                                  const Text('Target: ', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                                                  Wrap(
+                                                    spacing: 6,
+                                                    children: targetGroups.map<Widget>((tg) {
+                                                      final groupName = tg['class_groups']?['name'] ?? 'Group';
+                                                      return Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: isEmergency ? Colors.red.shade100 : const Color(0xFFE2E8F0),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                        ),
+                                                        child: Text(
+                                                          groupName,
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: isEmergency ? Colors.red.shade900 : const Color(0xFF1E293B),
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }).toList(),
+                                                  ),
+                                                ],
+                                              )
+                                            else
+                                              const SizedBox.shrink(),
+
+                                            // Permanent or Expiry Badge
+                                            if (item['is_permanent'] == true)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue.shade50,
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(color: Colors.blue.shade200),
+                                                ),
+                                                child: const Text('Permanent', style: TextStyle(fontSize: 10, color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold)),
+                                              )
+                                            else
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.shade100,
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  item['expires_at'] != null
+                                                      ? 'Expires: ${item['expires_at'].toString().substring(5, 10)}'
+                                                      : 'Semester Expiry',
+                                                  style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+                                                ),
+                                              ),
+
+                                            // Delete Button (visible to CR)
+                                            if (isCr)
+                                              IconButton(
+                                                icon: const Icon(Icons.delete_outline_rounded, size: 20, color: Colors.red),
+                                                tooltip: 'Delete Notice',
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                                onPressed: () async {
+                                                  final confirm = await showDialog<bool>(
+                                                    context: context,
+                                                    builder: (ctx) => AlertDialog(
+                                                      title: const Text('Delete Notice'),
+                                                      content: const Text('Are you sure you want to permanently delete this notice?'),
+                                                      actions: [
+                                                        TextButton(
+                                                          onPressed: () => Navigator.pop(ctx, false),
+                                                          child: const Text('Cancel'),
+                                                        ),
+                                                        TextButton(
+                                                          onPressed: () => Navigator.pop(ctx, true),
+                                                          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                                        ),
+                                                      ],
                                                     ),
                                                   );
-                                                }).toList(),
+                                                  if (confirm == true) {
+                                                    await ref.read(noticesServiceProvider).deleteNotice(item['id']);
+                                                    _fetchNotices();
+                                                  }
+                                                },
                                               ),
-                                            ],
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ],
                                     ),
                                   ),

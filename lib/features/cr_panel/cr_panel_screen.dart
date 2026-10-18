@@ -23,6 +23,8 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
   String _selectedCategory = 'NOTICE';
   final Set<String> _selectedGroupIds = {};
   DateTime? _selectedEventTime;
+  DateTime? _selectedExpiryTime;
+  bool _isPermanent = false;
   bool _sendPush = true;
   bool _isPublishing = false;
 
@@ -300,6 +302,28 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
     });
   }
 
+  Future<void> _pickExpiryTime() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedExpiryTime ?? now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (date == null) return;
+
+    if (!mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selectedExpiryTime ?? now),
+    );
+    if (time == null) return;
+
+    setState(() {
+      _selectedExpiryTime = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    });
+  }
+
   Future<void> _handleBroadcast() async {
     if (_titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -328,6 +352,8 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
         category: _selectedCategory,
         targetGroupIds: _selectedGroupIds.toList(),
         eventTime: _selectedEventTime,
+        customExpiry: _selectedExpiryTime,
+        isPermanent: _isPermanent,
         sendPush: _sendPush,
       );
 
@@ -338,6 +364,8 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
           _contentController.clear();
           _selectedGroupIds.clear();
           _selectedEventTime = null;
+          _selectedExpiryTime = null;
+          _isPermanent = false;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -734,6 +762,56 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                           ),
                     onTap: _pickEventTime,
                   ),
+                  const Divider(),
+
+                  // Notice Lifecycle & Expiry Settings
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Permanent Notice (Never auto-delete)'),
+                    subtitle: const Text('For university policies or rules that should stay beyond the 3-month semester'),
+                    value: _isPermanent,
+                    onChanged: (val) {
+                      setState(() {
+                        _isPermanent = val ?? false;
+                        if (_isPermanent) _selectedExpiryTime = null;
+                      });
+                    },
+                  ),
+
+                  if (!_isPermanent)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFFEFF6FF),
+                        child: Icon(Icons.auto_delete_outlined, color: Color(0xFF1E3A8A)),
+                      ),
+                      title: Text(
+                        _selectedExpiryTime == null
+                            ? 'Auto-Delete: End of Semester (3 Months Default)'
+                            : 'Auto-Delete On: ${_selectedExpiryTime!.toLocal().toString().substring(0, 16)}',
+                        style: TextStyle(
+                          fontWeight: _selectedExpiryTime != null ? FontWeight.bold : FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _selectedExpiryTime == null
+                            ? 'Cleaned up automatically after 90 days. Tap to set specific expiry time.'
+                            : 'Notice will automatically vanish from students after this date & time.',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: _selectedExpiryTime != null
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () => setState(() => _selectedExpiryTime = null),
+                            )
+                          : TextButton(
+                              onPressed: _pickExpiryTime,
+                              child: const Text('Change Date'),
+                            ),
+                      onTap: _pickExpiryTime,
+                    ),
+
                   const Divider(),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
