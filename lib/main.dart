@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,10 +38,22 @@ Future<void> main() async {
 
   // 3. Initialize Firebase (Spark Plan - 100% Free)
   try {
-    await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    if (kIsWeb) {
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: 'AIzaSyC_oNfk5yizWgVImuR5bYN9YBK1T0mbYvE',
+          appId: '1:977867086170:web:1af3d7bd4246d2225e3b63',
+          messagingSenderId: '977867086170',
+          projectId: 'unihub-5d151',
+          storageBucket: 'unihub-5d151.firebasestorage.app',
+        ),
+      );
+    } else {
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    }
   } catch (e) {
-    debugPrint("Firebase initialization warning (safe in non-mobile environments): $e");
+    debugPrint("Firebase initialization notice: $e");
   }
 
   // 4. Run UniHub application
