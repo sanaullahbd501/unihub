@@ -12,11 +12,12 @@ class AuthService {
 
   bool get isLoggedIn => currentUser != null;
 
-  /// Sends a one-time OTP email for login or signup
+  /// Sends a one-time OTP email for login or signup (supports both 1-click magic link and 6-digit OTP code)
   Future<void> signInWithEmailOtp(String email) async {
     await _client.auth.signInWithOtp(
       email: email.trim(),
       shouldCreateUser: true,
+      emailRedirectTo: 'io.supabase.unihub://login-callback',
     );
   }
 

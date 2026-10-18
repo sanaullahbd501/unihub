@@ -91,14 +91,14 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'We sent a 6-digit verification code to:\n${widget.email}',
+                'We sent a verification email to:\n${widget.email}\n\nTip: You can either tap the link in your email to log in instantly, or enter the 6-digit code below.',
                 style: const TextStyle(
                   fontSize: 14,
                   color: Color(0xFF64748B),
                   height: 1.5,
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               TextField(
                 controller: _otpController,
                 keyboardType: TextInputType.number,
