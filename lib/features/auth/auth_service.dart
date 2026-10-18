@@ -13,11 +13,70 @@ class AuthService {
 
   bool get isLoggedIn => currentUser != null;
 
-  /// Sends a one-time OTP email for login or signup (supports both 1-click magic link and 6-digit OTP code)
+  /// Check whether an email domain is authorized (@gmail.com or @student.wub.edu.bd)
+  static bool isDomainAllowed(String email) {
+    final clean = email.trim().toLowerCase();
+    return clean.endsWith('@gmail.com') || clean.endsWith('@student.wub.edu.bd');
+  }
+
+  /// Sign In with Email & Password
+  Future<AuthResponse> signInWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (!isDomainAllowed(cleanEmail)) {
+      throw const AuthException('শুধুমাত্র @gmail.com অথবা @student.wub.edu.bd ইমেইল দিয়ে লগইন করতে পারবেন।');
+    }
+
+    return await _client.auth.signInWithPassword(
+      email: cleanEmail,
+      password: password,
+    );
+  }
+
+  /// Sign Up with Email, Password & Full Name
+  Future<AuthResponse> signUpWithPassword({
+    required String email,
+    required String password,
+    required String fullName,
+  }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (!isDomainAllowed(cleanEmail)) {
+      throw const AuthException('শুধুমাত্র @gmail.com অথবা @student.wub.edu.bd ইমেইল দিয়ে একাউন্ট তৈরি করতে পারবেন।');
+    }
+
+    final res = await _client.auth.signUp(
+      email: cleanEmail,
+      password: password,
+      data: {'full_name': fullName.trim()},
+    );
+
+    // Ensure profile row exists in public.users
+    if (res.user != null) {
+      try {
+        await _client.from('users').upsert({
+          'id': res.user!.id,
+          'email': cleanEmail,
+          'full_name': fullName.trim(),
+          'role': 'student',
+        });
+      } catch (_) {}
+    }
+
+    return res;
+  }
+
+  /// Sends a one-time OTP email for login or signup
   Future<void> signInWithEmailOtp(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (!isDomainAllowed(cleanEmail)) {
+      throw const AuthException('শুধুমাত্র @gmail.com অথবা @student.wub.edu.bd ইমেইল অনুমোদিত।');
+    }
+
     final redirectTo = kIsWeb ? 'http://localhost:8080' : 'io.supabase.unihub://login-callback';
     await _client.auth.signInWithOtp(
-      email: email.trim(),
+      email: cleanEmail,
       shouldCreateUser: true,
       emailRedirectTo: redirectTo,
     );
@@ -29,7 +88,7 @@ class AuthService {
     required String token,
   }) async {
     return await _client.auth.verifyOTP(
-      email: email.trim(),
+      email: email.trim().toLowerCase(),
       token: token.trim(),
       type: OtpType.email,
     );

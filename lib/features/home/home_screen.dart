@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/supabase_service.dart';
 import '../../shared/providers/auth_provider.dart';
 import '../groups/groups_service.dart';
@@ -51,6 +53,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _pickAndUploadAvatar(void Function(void Function()) setModalState) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      final user = SupabaseService.client.auth.currentUser;
+      if (user == null) return;
+
+      final fileName = '${user.id}.webp';
+      await SupabaseService.client.storage
+          .from('avatars')
+          .uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(contentType: 'image/webp', upsert: true),
+          );
+
+      final publicUrl = SupabaseService.client.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+      final cacheBustedUrl = '$publicUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+
+      await SupabaseService.client
+          .from('users')
+          .update({'avatar_url': cacheBustedUrl})
+          .eq('id', user.id);
+
+      setModalState(() {
+        if (_userProfile != null) {
+          _userProfile!['avatar_url'] = cacheBustedUrl;
+        }
+      });
+      setState(() {
+        if (_userProfile != null) {
+          _userProfile!['avatar_url'] = cacheBustedUrl;
+        }
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('প্রোফাইল ছবি সফলভাবে WebP ফরম্যাটে আপলোড হয়েছে!'),
+            backgroundColor: Color(0xFF16A34A),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ছবি আপলোড ব্যর্থ: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _showRoleDialog() async {
     final currentRole = _userProfile?['role']?.toString().toLowerCase() ?? 'student';
     String selectedRole = currentRole;
@@ -59,74 +124,115 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final updated = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => AlertDialog(
-          title: const Text('Profile & Role Setup'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name',
-                    hintText: 'e.g. Sanaullah',
-                    prefixIcon: Icon(Icons.person_outline),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Select Your Primary Role:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                RadioGroup<String>(
-                  groupValue: selectedRole,
-                  onChanged: (val) {
-                    if (val != null) setModalState(() => selectedRole = val);
-                  },
-                  child: Column(
+        builder: (context, setModalState) {
+          final avatarUrl = _userProfile?['avatar_url'] as String?;
+
+          return AlertDialog(
+            title: const Text('Profile & Role Setup'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Avatar with upload button
+                  Stack(
                     children: [
-                      RadioListTile<String>(
-                        title: const Text('CR (Class Representative)'),
-                        subtitle: const Text('Create classes, manage groups (95B, 95C), add Co-CR, broadcast notices'),
-                        value: 'cr',
+                      CircleAvatar(
+                        radius: 44,
+                        backgroundColor: const Color(0xFF1E3A8A).withValues(alpha: 0.1),
+                        backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: avatarUrl == null || avatarUrl.isEmpty
+                            ? const Icon(Icons.person, size: 48, color: Color(0xFF1E3A8A))
+                            : null,
                       ),
-                      RadioListTile<String>(
-                        title: const Text('Student'),
-                        subtitle: const Text('Join class groups with invite codes and receive targeted notices'),
-                        value: 'student',
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: InkWell(
+                          onTap: () => _pickAndUploadAvatar(setModalState),
+                          child: const CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Color(0xFF1E3A8A),
+                            child: Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => _pickAndUploadAvatar(setModalState),
+                    icon: const Icon(Icons.upload_rounded, size: 16),
+                    label: const Text('Change Picture (WebP)'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Full Name',
+                      hintText: 'e.g. Sanaullah',
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Select Your Primary Role:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ),
+                  RadioGroup<String>(
+                    groupValue: selectedRole,
+                    onChanged: (val) {
+                      if (val != null) setModalState(() => selectedRole = val);
+                    },
+                    child: Column(
+                      children: const [
+                        RadioListTile<String>(
+                          title: Text('CR (Class Representative)'),
+                          subtitle: Text('Create classes, manage groups (95B, 95C), add Co-CR, broadcast notices'),
+                          value: 'cr',
+                        ),
+                        RadioListTile<String>(
+                          title: Text('Student'),
+                          subtitle: Text('Join class groups with invite codes and receive targeted notices'),
+                          value: 'student',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  await ref.read(groupsServiceProvider).updateUserRole(
-                    role: selectedRole,
-                    fullName: nameCtrl.text.trim(),
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx, true);
-                } catch (e) {
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text('Failed: $e')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  try {
+                    await ref.read(groupsServiceProvider).updateUserRole(
+                      role: selectedRole,
+                      fullName: nameCtrl.text.trim(),
                     );
+                    if (ctx.mounted) Navigator.pop(ctx, true);
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text('Failed: $e')),
+                      );
+                    }
                   }
-                }
-              },
-              child: const Text('Save Changes'),
-            ),
-          ],
-        ),
+                },
+                child: const Text('Save Changes'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
@@ -168,6 +274,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final email = user?.email ?? 'Student';
     final role = (_userProfile?['role']?.toString().toUpperCase()) ?? 'STUDENT';
     final isCr = role == 'CR' || role == 'ADMIN';
+    final avatarUrl = _userProfile?['avatar_url'] as String?;
 
     return Scaffold(
       appBar: AppBar(
@@ -213,11 +320,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 CircleAvatar(
                                   radius: 28,
                                   backgroundColor: const Color(0xFF1E3A8A).withValues(alpha: 0.1),
-                                  child: Icon(
-                                    isCr ? Icons.admin_panel_settings_rounded : Icons.person_outline_rounded,
-                                    size: 32,
-                                    color: const Color(0xFF1E3A8A),
-                                  ),
+                                  backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                                      ? NetworkImage(avatarUrl)
+                                      : null,
+                                  child: avatarUrl == null || avatarUrl.isEmpty
+                                      ? Icon(
+                                          isCr ? Icons.admin_panel_settings_rounded : Icons.person_outline_rounded,
+                                          size: 32,
+                                          color: const Color(0xFF1E3A8A),
+                                        )
+                                      : null,
                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
@@ -256,7 +368,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           InkWell(
                                             onTap: _showRoleDialog,
                                             child: const Text(
-                                              'Change Role',
+                                              'Edit Profile & Photo',
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 color: Color(0xFF1E3A8A),
@@ -353,11 +465,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       runSpacing: 8,
                                       children: _myGroups.map((item) {
                                         final g = item['class_groups'] as Map<String, dynamic>?;
+                                        final gId = item['group_id'] as String;
                                         final gName = g?['name'] ?? 'Group';
                                         return Chip(
                                           avatar: const Icon(Icons.group, size: 16, color: Color(0xFF1E3A8A)),
                                           label: Text('Section $gName'),
                                           backgroundColor: const Color(0xFFEFF6FF),
+                                          deleteIcon: const Icon(Icons.close, size: 16),
+                                          onDeleted: () async {
+                                            await ref.read(groupsServiceProvider).leaveGroup(gId);
+                                            _loadData();
+                                          },
                                         );
                                       }).toList(),
                                     ),

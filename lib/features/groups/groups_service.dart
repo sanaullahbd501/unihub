@@ -55,15 +55,6 @@ class GroupsService {
         .select()
         .single();
 
-    // Auto-enroll the creator into group_members as CR
-    try {
-      await _supabase.from('group_members').insert({
-        'group_id': group['id'],
-        'user_id': user.id,
-        'role': 'cr',
-      });
-    } catch (_) {}
-
     return group;
   }
 
@@ -81,7 +72,7 @@ class GroupsService {
     return List<Map<String, dynamic>>.from(classes);
   }
 
-  /// Fetches groups the current user is enrolled in
+  /// Fetches groups the current user is enrolled in as a Student
   Future<List<Map<String, dynamic>>> getMyEnrolledGroups() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return [];
@@ -89,9 +80,22 @@ class GroupsService {
     final res = await _supabase
         .from('group_members')
         .select('group_id, role, joined_at, class_groups(id, name, invite_code, class_id, classes(name, department_name, university_name))')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .eq('role', 'student');
 
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Leave an enrolled group
+  Future<void> leaveGroup(String groupId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    await _supabase
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', user.id);
   }
 
   /// Join a group using an invite code (e.g. "95B", "95B-CSE")
