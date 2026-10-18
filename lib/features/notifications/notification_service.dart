@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/services/supabase_service.dart';
@@ -10,49 +10,68 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 class NotificationService {
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  FirebaseMessaging? get _fcm {
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        return FirebaseMessaging.instance;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   final _supabase = SupabaseService.client;
 
   /// Initializes FCM listeners, permissions, and token sync
   Future<void> initialize() async {
-    // 1. Request user notification permission (Android 13+ & iOS)
-    final settings = await _fcm.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
+    final fcm = _fcm;
+    if (fcm == null) {
+      debugPrint('FCM skipped: Firebase is not initialized on this platform.');
+      return;
+    }
 
-    if (settings.authorizationStatus == AuthorizationStatus.authorized ||
-        settings.authorizationStatus == AuthorizationStatus.provisional) {
-      debugPrint('Notification permission granted.');
+    try {
+      // 1. Request user notification permission (Android 13+ & iOS)
+      final settings = await fcm.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,
+      );
 
-      // 2. Fetch and register token
-      await registerDeviceToken();
+      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional) {
+        debugPrint('Notification permission granted.');
 
-      // 3. Listen for token refresh events
-      _fcm.onTokenRefresh.listen((newToken) {
-        saveTokenToDatabase(newToken);
-      });
+        // 2. Fetch and register token
+        await registerDeviceToken();
 
-      // 4. Foreground message listener
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        debugPrint('Received foreground notification: ${message.notification?.title}');
-      });
+        // 3. Listen for token refresh events
+        fcm.onTokenRefresh.listen((newToken) {
+          saveTokenToDatabase(newToken);
+        });
 
-      // 5. Handle app opened from terminated or background state via notification tap
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        handleNotificationNavigation(message);
-      });
-    } else {
-      debugPrint('Notification permission was declined.');
+        // 4. Foreground message listener
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          debugPrint('Received foreground notification: ${message.notification?.title}');
+        });
+
+        // 5. Handle app opened from terminated or background state via notification tap
+        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+          handleNotificationNavigation(message);
+        });
+      }
+    } catch (e) {
+      debugPrint('FCM initialization warning: $e');
     }
   }
 
   /// Obtains the current device FCM token and stores it in Supabase
   Future<String?> registerDeviceToken() async {
+    final fcm = _fcm;
+    if (fcm == null) return null;
+
     try {
-      final token = await _fcm.getToken();
+      final token = await fcm.getToken();
       if (token != null) {
         await saveTokenToDatabase(token);
         return token;
@@ -69,13 +88,7 @@ class NotificationService {
     if (user == null) return;
 
     try {
-      final platform = kIsWeb
-          ? 'web'
-          : Platform.isAndroid
-              ? 'android'
-              : Platform.isIOS
-                  ? 'ios'
-                  : 'web';
+      final platform = kIsWeb ? 'web' : 'android';
 
       await _supabase.from('notification_tokens').upsert(
         {
@@ -96,8 +109,11 @@ class NotificationService {
 
   /// Deactivates token in Supabase when user logs out
   Future<void> deactivateTokenOnLogout() async {
+    final fcm = _fcm;
+    if (fcm == null) return;
+
     try {
-      final token = await _fcm.getToken();
+      final token = await fcm.getToken();
       if (token != null) {
         await _supabase
             .from('notification_tokens')
