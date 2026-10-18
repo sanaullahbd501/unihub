@@ -294,6 +294,100 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
     );
   }
 
+  Future<void> _confirmDeleteClass(String classId, String className) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Class / Batch?'),
+        content: Text(
+          'Are you sure you want to delete "$className"?\n\nAll groups, sections, weekly routines, and scheduled exams belonging to this batch will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete Permanently'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await ref.read(groupsServiceProvider).deleteClass(classId);
+        _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Class "$className" deleted successfully.'),
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete class: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteGroup(String groupId, String groupName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Section / Group?'),
+        content: Text(
+          'Are you sure you want to delete section "$groupName"? All members and routine for this section will be removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete Section'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await ref.read(groupsServiceProvider).deleteGroup(groupId);
+        _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Section "$groupName" deleted.'),
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete section: $e')),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _pickEventTime() async {
     final now = DateTime.now();
     final date = await showDatePicker(
@@ -518,10 +612,16 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                                 ],
                               ),
                             ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 22),
+                              tooltip: 'Delete Class / Batch',
+                              onPressed: () => _confirmDeleteClass(classId, className),
+                            ),
                             PopupMenuButton<String>(
                               onSelected: (val) {
                                 if (val == 'add_group') _showAddGroupDialog(classId, className);
                                 if (val == 'add_co_cr') _showAddCoCrDialog(classId);
+                                if (val == 'delete_class') _confirmDeleteClass(classId, className);
                               },
                               itemBuilder: (ctx) => [
                                 const PopupMenuItem(
@@ -541,6 +641,16 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                                       Icon(Icons.person_add_alt, size: 18),
                                       SizedBox(width: 8),
                                       Text('Add Co-CR'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete_class',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_forever_rounded, color: Colors.red, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Delete Class (ক্লাস মুছুন)', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -577,18 +687,48 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                             spacing: 8,
                             runSpacing: 8,
                             children: groups.map<Widget>((g) {
+                              final gId = g['id'] as String;
                               final gName = g['name'] ?? '';
                               final code = g['invite_code'] ?? '';
-                              return Chip(
-                                avatar: const Icon(Icons.group, size: 16, color: Color(0xFF1E3A8A)),
-                                label: Text('$gName (Code: $code)'),
-                                deleteIcon: const Icon(Icons.copy_rounded, size: 16),
-                                onDeleted: () {
-                                  Clipboard.setData(ClipboardData(text: code));
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Copied invite code: $code')),
-                                  );
-                                },
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.group, size: 16, color: Color(0xFF1E3A8A)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '$gName (Code: $code)',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    InkWell(
+                                      onTap: () {
+                                        Clipboard.setData(ClipboardData(text: code));
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Copied invite code: $code')),
+                                        );
+                                      },
+                                      child: const Tooltip(
+                                        message: 'Copy invite code',
+                                        child: Icon(Icons.copy_rounded, size: 16, color: Color(0xFF0284C7)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    InkWell(
+                                      onTap: () => _confirmDeleteGroup(gId, gName),
+                                      child: const Tooltip(
+                                        message: 'Delete section',
+                                        child: Icon(Icons.close_rounded, size: 16, color: Colors.red),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
                             }).toList(),
                           ),

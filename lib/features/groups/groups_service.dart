@@ -72,6 +72,29 @@ class GroupsService {
     return List<Map<String, dynamic>>.from(classes);
   }
 
+  /// Deletes a class and all associated groups, routines, and exams (via CASCADE)
+  Future<void> deleteClass(String classId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
+
+    await _supabase
+        .from('classes')
+        .delete()
+        .eq('id', classId)
+        .eq('created_by', user.id);
+  }
+
+  /// Deletes a group/section
+  Future<void> deleteGroup(String groupId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
+
+    await _supabase
+        .from('class_groups')
+        .delete()
+        .eq('id', groupId);
+  }
+
   /// Fetches groups the current user is enrolled in as a Student
   Future<List<Map<String, dynamic>>> getMyEnrolledGroups() async {
     final user = _supabase.auth.currentUser;
