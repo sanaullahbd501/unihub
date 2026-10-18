@@ -11,6 +11,7 @@ import '../features/notices/notices_screen.dart';
 import '../features/notifications/notification_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/calling/calling_screen.dart';
+import '../features/routine/routine_screen.dart';
 
 /// Helper class to bridge a Dart Stream to Listenable for GoRouter refresh
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -106,6 +107,11 @@ class AppRouter {
       GoRoute(
         path: '/campus-call',
         builder: (context, state) => const CallingScreen(),
+      ),
+
+      GoRoute(
+        path: '/routine',
+        builder: (context, state) => const RoutineScreen(),
       ),
     ],
   );

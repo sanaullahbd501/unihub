@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../groups/groups_service.dart';
 import '../notices/notices_service.dart';
+import '../routine/routine_service.dart';
 
 class CrPanelScreen extends ConsumerStatefulWidget {
   const CrPanelScreen({super.key});
@@ -16,6 +17,8 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
   late TabController _tabController;
   bool _isLoading = true;
   List<Map<String, dynamic>> _classes = [];
+  List<Map<String, dynamic>> _routines = [];
+  List<Map<String, dynamic>> _exams = [];
 
   // Broadcast Notice Form State
   final _titleController = TextEditingController();
@@ -31,7 +34,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadData();
   }
 
@@ -47,9 +50,13 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
     setState(() => _isLoading = true);
     try {
       final classes = await ref.read(groupsServiceProvider).getMyManagedClasses();
+      final routines = await ref.read(routineServiceProvider).getRoutines();
+      final exams = await ref.read(routineServiceProvider).getActiveExams();
       if (mounted) {
         setState(() {
           _classes = classes;
+          _routines = routines;
+          _exams = exams;
           _isLoading = false;
         });
       }
@@ -398,6 +405,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
           tabs: const [
             Tab(icon: Icon(Icons.groups_rounded), text: 'Classes & Groups'),
             Tab(icon: Icon(Icons.campaign_rounded), text: 'Broadcast Notice'),
+            Tab(icon: Icon(Icons.calendar_month_rounded), text: 'Routine & Exams'),
           ],
         ),
       ),
@@ -408,6 +416,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
               children: [
                 _buildClassesTab(),
                 _buildBroadcastTab(),
+                _buildRoutineAndExamsTab(),
               ],
             ),
     );
@@ -876,6 +885,874 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Tab 3: Routine & Exams Management
+  Widget _buildRoutineAndExamsTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            color: const Color(0xFFEFF6FF),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.calendar_month_rounded, color: Color(0xFF1E3A8A)),
+                      SizedBox(width: 8),
+                      Text(
+                        'Academic Schedule Manager',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E3A8A)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Create class routines and exam schedules. Routine notifications automatically alert group students (1 day, 12h, 6h, 3h, 1h, 30m, 10m, and on time). Exams automatically vanish 3 hours after finishing.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _showAddRoutineDialog,
+                          icon: const Icon(Icons.add_task_rounded, size: 18),
+                          label: const Text('Add Routine'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E3A8A),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _showAddExamDialog,
+                          icon: const Icon(Icons.assignment_add, size: 18),
+                          label: const Text('Schedule Exam'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple.shade700,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Section 1: Weekly Class Routine
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Weekly Class Routine',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              ),
+              Text(
+                '${_routines.length} Classes',
+                style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_routines.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.event_note_outlined, size: 48, color: Colors.grey.shade400),
+                      const SizedBox(height: 8),
+                      const Text('No class routine entries added yet.', style: TextStyle(color: Colors.grey)),
+                      TextButton.icon(
+                        onPressed: _showAddRoutineDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add First Class'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            ..._routines.map((routine) => _buildRoutineItemCard(routine)),
+
+          const SizedBox(height: 24),
+
+          // Section 2: Active Exams & Quizzes
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Upcoming Exams & Quizzes',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text('Auto-cleans +3h', style: TextStyle(fontSize: 11, color: Colors.brown, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_exams.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.assignment_turned_in_outlined, size: 48, color: Colors.green.shade300),
+                      const SizedBox(height: 8),
+                      const Text('No upcoming exams scheduled.', style: TextStyle(color: Colors.grey)),
+                      TextButton.icon(
+                        onPressed: _showAddExamDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Schedule Exam / Quiz'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            ..._exams.map((exam) => _buildExamItemCard(exam)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoutineItemCard(Map<String, dynamic> item) {
+    final fullDays = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final dayNum = item['day_of_week'] as int? ?? 1;
+    final dayName = (dayNum >= 1 && dayNum <= 7) ? fullDays[dayNum] : '';
+    final subject = item['subject'] ?? '';
+    final teacher = item['teacher_name'] as String?;
+    final startTime = item['start_time'].toString().substring(0, 5);
+    final endTime = item['end_time'].toString().substring(0, 5);
+    final isOnline = item['is_online'] == true;
+    final room = item['room_number'] as String?;
+    final link = item['meeting_link'] as String?;
+    final group = item['class_groups']?['name'] ?? 'Section';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E3A8A),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    dayName,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isOnline ? Colors.green.shade100 : Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    isOnline ? '🌐 Online' : '🏫 Room: ${room ?? "TBA"}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isOnline ? Colors.green.shade900 : Colors.blue.shade900,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text('Section $group', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subject,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
+            ),
+            if (teacher != null && teacher.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text('Teacher: $teacher', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            ],
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text('$startTime - $endTime', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                if (isOnline && link != null && link.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  const Icon(Icons.link_rounded, size: 14, color: Color(0xFF16A34A)),
+                  const SizedBox(width: 4),
+                  const Text('Meeting Link Attached', style: TextStyle(fontSize: 12, color: Color(0xFF16A34A), fontWeight: FontWeight.bold)),
+                ],
+              ],
+            ),
+            const Divider(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _showSendRoutineReminderDialog(item),
+                  icon: const Icon(Icons.notifications_active_rounded, size: 16),
+                  label: const Text('Send Interval Alert'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                  tooltip: 'Delete Class',
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Delete Routine?'),
+                        content: Text('Are you sure you want to delete $subject from weekly routine?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) {
+                      await ref.read(routineServiceProvider).deleteRoutine(item['id']);
+                      _loadData();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExamItemCard(Map<String, dynamic> exam) {
+    final subject = exam['subject'] ?? '';
+    final type = exam['exam_type'] ?? 'EXAM';
+    final date = exam['exam_date'] ?? '';
+    final startTime = exam['start_time'].toString().substring(0, 5);
+    final endTime = exam['end_time'].toString().substring(0, 5);
+    final isOnline = exam['is_online'] == true;
+    final room = exam['room_number'] as String?;
+    final link = exam['meeting_link'] as String?;
+    final group = exam['class_groups']?['name'] ?? 'Section';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFC084FC), width: 1.2),
+      ),
+      color: const Color(0xFFFAF5FF),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade700,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '$type EXAM',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('Date: $date', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF581C87))),
+                const Spacer(),
+                Text('Section $group', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subject,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF3B0764)),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF6B21A8)),
+                const SizedBox(width: 4),
+                Text('$startTime - $endTime', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6B21A8))),
+                const SizedBox(width: 12),
+                Icon(isOnline ? Icons.videocam_rounded : Icons.meeting_room_rounded, size: 14, color: const Color(0xFF6B21A8)),
+                const SizedBox(width: 4),
+                Text(isOnline ? 'Online' : 'Room: ${room ?? "TBA"}', style: const TextStyle(fontSize: 12, color: Color(0xFF6B21A8))),
+              ],
+            ),
+            const Divider(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    await ref.read(routineServiceProvider).sendRoutineReminder(
+                      groupId: exam['group_id'],
+                      subject: '$type Exam: $subject',
+                      intervalLabel: 'Upcoming Exam',
+                      startTime: '$date at $startTime',
+                      isOnline: isOnline,
+                      roomNumber: room,
+                      meetingLink: link,
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Exam alert sent to Section $group!'), backgroundColor: Colors.purple.shade700),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.campaign_rounded, size: 16),
+                  label: const Text('Send Exam Alert'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                  tooltip: 'Delete Exam',
+                  onPressed: () async {
+                    await ref.read(routineServiceProvider).deleteExam(exam['id']);
+                    _loadData();
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSendRoutineReminderDialog(Map<String, dynamic> routine) async {
+    final subject = routine['subject'] ?? 'Class';
+    final startTime = routine['start_time'].toString().substring(0, 5);
+    final groupId = routine['group_id'] as String;
+    final isOnline = routine['is_online'] == true;
+    final roomNumber = routine['room_number'] as String?;
+    final meetingLink = routine['meeting_link'] as String?;
+    final groupName = routine['class_groups']?['name'] ?? '';
+
+    final intervals = [
+      {'label': '1 Day Before', 'bengali': '১ দিন আগে নোটিফিকেশন', 'icon': Icons.calendar_today_rounded},
+      {'label': '12 Hours Before', 'bengali': '১২ ঘণ্টা আগে নোটিফিকেশন', 'icon': Icons.access_time_rounded},
+      {'label': '6 Hours Before', 'bengali': '৬ ঘণ্টা আগে নোটিফিকেশন', 'icon': Icons.schedule_rounded},
+      {'label': '3 Hours Before', 'bengali': '৩ ঘণ্টা আগে নোটিফিকেশন', 'icon': Icons.alarm_rounded},
+      {'label': '1 Hour Before', 'bengali': '১ ঘণ্টা আগে নোটিফিকেশন', 'icon': Icons.hourglass_top_rounded},
+      {'label': '30 Min Before', 'bengali': '৩০ মিনিট আগে নোটিফিকেশন', 'icon': Icons.timer_rounded},
+      {'label': '10 Min Before', 'bengali': '১০ মিনিট আগে নোটিফিকেশন (Get Ready!)', 'icon': Icons.notification_important_rounded},
+      {'label': 'Starting Now!', 'bengali': 'এখনই ক্লাস শুরু! (On Time)', 'icon': Icons.play_circle_fill_rounded},
+    ];
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.notifications_active_rounded, color: Color(0xFF1E3A8A)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Send Class Alert: $subject',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        Text(
+                          'Target: Section $groupName • Starts at $startTime',
+                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              const Text(
+                'Select Countdown Notification Interval:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 10),
+              ...intervals.map((item) {
+                final label = item['label'] as String;
+                final bengali = item['bengali'] as String;
+                final icon = item['icon'] as IconData;
+                final isUrgent = label.contains('10 Min') || label.contains('Starting Now');
+
+                return ListTile(
+                  dense: true,
+                  leading: Icon(icon, color: isUrgent ? const Color(0xFFDC2626) : const Color(0xFF1E3A8A)),
+                  title: Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: isUrgent ? const Color(0xFFDC2626) : null)),
+                  subtitle: Text(bengali, style: const TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.send_rounded, size: 16),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await ref.read(routineServiceProvider).sendRoutineReminder(
+                      groupId: groupId,
+                      subject: subject,
+                      intervalLabel: label,
+                      startTime: startTime,
+                      isOnline: isOnline,
+                      roomNumber: roomNumber,
+                      meetingLink: meetingLink,
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('[$label] notification dispatched to Section $groupName!'),
+                          backgroundColor: const Color(0xFF1E3A8A),
+                        ),
+                      );
+                    }
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAddRoutineDialog() async {
+    if (_allGroups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please create a class and group first before adding routine.')),
+      );
+      return;
+    }
+
+    String selectedGroupId = _allGroups.first['id'];
+    String selectedClassId = _allGroups.first['class_id'];
+    final subjectCtrl = TextEditingController();
+    final teacherCtrl = TextEditingController();
+    final roomCtrl = TextEditingController(text: 'Room 402');
+    final linkCtrl = TextEditingController(text: 'https://meet.google.com/');
+    int selectedDay = 7; // Sunday by default
+    TimeOfDay startTime = const TimeOfDay(hour: 10, minute: 0);
+    TimeOfDay endTime = const TimeOfDay(hour: 11, minute: 30);
+    bool isOnline = false;
+    bool sendInitialAlert = true;
+
+    final days = [
+      {'val': 7, 'label': 'Sunday (রবিবার)'},
+      {'val': 1, 'label': 'Monday (সোমবার)'},
+      {'val': 2, 'label': 'Tuesday (মঙ্গলবার)'},
+      {'val': 3, 'label': 'Wednesday (বুধবার)'},
+      {'val': 4, 'label': 'Thursday (বৃহস্পতিবার)'},
+      {'val': 5, 'label': 'Friday (শুক্রবার)'},
+      {'val': 6, 'label': 'Saturday (শনিবার)'},
+    ];
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return AlertDialog(
+            title: const Text('Add Class Routine'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedGroupId,
+                    decoration: const InputDecoration(labelText: 'Target Section / Group *'),
+                    items: _allGroups.map((g) {
+                      return DropdownMenuItem<String>(
+                        value: g['id'],
+                        child: Text('${g['class_name']} - Section ${g['name']}'),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setModalState(() {
+                          selectedGroupId = val;
+                          final match = _allGroups.firstWhere((g) => g['id'] == val);
+                          selectedClassId = match['class_id'];
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: subjectCtrl,
+                    decoration: const InputDecoration(labelText: 'Subject Name *', hintText: 'e.g. Data Structures'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: teacherCtrl,
+                    decoration: const InputDecoration(labelText: 'Teacher Name (Optional)', hintText: 'e.g. Dr. Sanaullah'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    initialValue: selectedDay,
+                    decoration: const InputDecoration(labelText: 'Day of Week *'),
+                    items: days.map((d) {
+                      return DropdownMenuItem<int>(
+                        value: d['val'] as int,
+                        child: Text(d['label'] as String),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setModalState(() => selectedDay = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final picked = await showTimePicker(context: context, initialTime: startTime);
+                            if (picked != null) setModalState(() => startTime = picked);
+                          },
+                          child: Text('Start: ${startTime.format(context)}'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final picked = await showTimePicker(context: context, initialTime: endTime);
+                            if (picked != null) setModalState(() => endTime = picked);
+                          },
+                          child: Text('End: ${endTime.format(context)}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Online Class (Zoom / Google Meet)'),
+                    value: isOnline,
+                    onChanged: (val) => setModalState(() => isOnline = val),
+                  ),
+                  if (isOnline)
+                    TextField(
+                      controller: linkCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Meeting Link *',
+                        hintText: 'https://meet.google.com/xyz',
+                        prefixIcon: Icon(Icons.link),
+                      ),
+                    )
+                  else
+                    TextField(
+                      controller: roomCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Room Number *',
+                        hintText: 'e.g. Room 402, Lab 3',
+                        prefixIcon: Icon(Icons.room),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Send notification to group now', style: TextStyle(fontSize: 13)),
+                    value: sendInitialAlert,
+                    onChanged: (v) => setModalState(() => sendInitialAlert = v ?? true),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  if (subjectCtrl.text.trim().isEmpty) return;
+                  final startStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
+                  final endStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
+
+                  try {
+                    await ref.read(routineServiceProvider).saveRoutine(
+                      classId: selectedClassId,
+                      groupId: selectedGroupId,
+                      subject: subjectCtrl.text.trim(),
+                      teacherName: teacherCtrl.text.trim().isEmpty ? null : teacherCtrl.text.trim(),
+                      dayOfWeek: selectedDay,
+                      startTime: startStr,
+                      endTime: endStr,
+                      isOnline: isOnline,
+                      roomNumber: isOnline ? null : roomCtrl.text.trim(),
+                      meetingLink: isOnline ? linkCtrl.text.trim() : null,
+                      dispatchInitialAlert: sendInitialAlert,
+                    );
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    _loadData();
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                    }
+                  }
+                },
+                child: const Text('Save Routine'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showAddExamDialog() async {
+    if (_allGroups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please create a class and group first before scheduling exams.')),
+      );
+      return;
+    }
+
+    String selectedGroupId = _allGroups.first['id'];
+    String selectedClassId = _allGroups.first['class_id'];
+    final subjectCtrl = TextEditingController();
+    final roomCtrl = TextEditingController(text: 'Room 501');
+    final linkCtrl = TextEditingController(text: 'https://meet.google.com/');
+    String examType = 'MID';
+    DateTime examDate = DateTime.now().add(const Duration(days: 3));
+    TimeOfDay startTime = const TimeOfDay(hour: 10, minute: 0);
+    TimeOfDay endTime = const TimeOfDay(hour: 12, minute: 0);
+    bool isOnline = false;
+    bool sendAlert = true;
+
+    final examTypes = [
+      {'val': 'CT', 'label': 'Class Test (CT)'},
+      {'val': 'MID', 'label': 'Midterm Exam'},
+      {'val': 'FINAL', 'label': 'Final Exam'},
+      {'val': 'QUIZ', 'label': 'Quiz'},
+    ];
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return AlertDialog(
+            title: const Text('Schedule Exam / Quiz'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedGroupId,
+                    decoration: const InputDecoration(labelText: 'Target Section / Group *'),
+                    items: _allGroups.map((g) {
+                      return DropdownMenuItem<String>(
+                        value: g['id'],
+                        child: Text('${g['class_name']} - Section ${g['name']}'),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setModalState(() {
+                          selectedGroupId = val;
+                          final match = _allGroups.firstWhere((g) => g['id'] == val);
+                          selectedClassId = match['class_id'];
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: subjectCtrl,
+                    decoration: const InputDecoration(labelText: 'Subject Name *', hintText: 'e.g. Operating Systems'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: examType,
+                    decoration: const InputDecoration(labelText: 'Exam Type *'),
+                    items: examTypes.map((t) {
+                      return DropdownMenuItem<String>(
+                        value: t['val'] as String,
+                        child: Text(t['label'] as String),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setModalState(() => examType = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: examDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 180)),
+                      );
+                      if (picked != null) setModalState(() => examDate = picked);
+                    },
+                    icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                    label: Text('Date: ${examDate.day}/${examDate.month}/${examDate.year}'),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final picked = await showTimePicker(context: context, initialTime: startTime);
+                            if (picked != null) setModalState(() => startTime = picked);
+                          },
+                          child: Text('Start: ${startTime.format(context)}'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final picked = await showTimePicker(context: context, initialTime: endTime);
+                            if (picked != null) setModalState(() => endTime = picked);
+                          },
+                          child: Text('End: ${endTime.format(context)}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Online Exam'),
+                    value: isOnline,
+                    onChanged: (val) => setModalState(() => isOnline = val),
+                  ),
+                  if (isOnline)
+                    TextField(
+                      controller: linkCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Exam Meeting Link *',
+                        prefixIcon: Icon(Icons.link),
+                      ),
+                    )
+                  else
+                    TextField(
+                      controller: roomCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Exam Room Number *',
+                        prefixIcon: Icon(Icons.room),
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.auto_delete_outlined, size: 18, color: Colors.brown),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Exams automatically clean up from all students 3 hours after end time.',
+                            style: TextStyle(fontSize: 11, color: Colors.brown, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Broadcast notification to group students', style: TextStyle(fontSize: 13)),
+                    value: sendAlert,
+                    onChanged: (v) => setModalState(() => sendAlert = v ?? true),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  if (subjectCtrl.text.trim().isEmpty) return;
+                  final startStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
+                  final endStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
+
+                  try {
+                    await ref.read(routineServiceProvider).saveExam(
+                      classId: selectedClassId,
+                      groupId: selectedGroupId,
+                      subject: subjectCtrl.text.trim(),
+                      examType: examType,
+                      examDate: examDate,
+                      startTime: startStr,
+                      endTime: endStr,
+                      isOnline: isOnline,
+                      roomNumber: isOnline ? null : roomCtrl.text.trim(),
+                      meetingLink: isOnline ? linkCtrl.text.trim() : null,
+                      dispatchAlert: sendAlert,
+                    );
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    _loadData();
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                    }
+                  }
+                },
+                child: const Text('Save Exam Schedule'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

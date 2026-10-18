@@ -19,6 +19,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<Map<String, dynamic>> _myGroups = [];
   Map<String, dynamic>? _latestEmergencyNotice;
   bool _isLoading = true;
+  RealtimeChannel? _emergencyNoticesChannel;
+  String? _acknowledgedEmergencyNoticeId;
 
   @override
   void initState() {
@@ -26,6 +28,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _loadData();
     // Initialize push notifications
     ref.read(notificationServiceProvider).initialize();
+    _subscribeToEmergencyRealtime();
+  }
+
+  @override
+  void dispose() {
+    _emergencyNoticesChannel?.unsubscribe();
+    super.dispose();
+  }
+
+  void _subscribeToEmergencyRealtime() {
+    try {
+      _emergencyNoticesChannel = SupabaseService.client
+          .channel('public:notices:emergency')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'notices',
+            callback: (payload) {
+              final newRecord = payload.newRecord;
+              if (newRecord['category'] == 'EMERGENCY') {
+                if (mounted) {
+                  setState(() => _latestEmergencyNotice = newRecord);
+                  _showEmergencyFullScreenDialog(newRecord);
+                }
+              }
+            },
+          )
+          .subscribe();
+    } catch (_) {}
   }
 
   Future<void> _loadData() async {
@@ -56,6 +87,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _latestEmergencyNotice = emergencyNotice;
             _isLoading = false;
           });
+
+          // Automatically surface screen-filling alert if unacknowledged
+          if (emergencyNotice != null && _acknowledgedEmergencyNoticeId != emergencyNotice['id']) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showEmergencyFullScreenDialog(emergencyNotice);
+              }
+            });
+          }
         }
       } catch (_) {
         if (mounted) setState(() => _isLoading = false);
@@ -542,11 +582,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               subtitle: 'Class & exam schedule',
                               icon: Icons.calendar_month_outlined,
                               color: Colors.orange.shade700,
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Routine module: use notices for routine changes.')),
-                                );
-                              },
+                              onTap: () => context.push('/routine'),
                             ),
                             _buildFeatureCard(
                               title: 'Campus Intercom',
@@ -647,7 +683,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => context.push('/notices'),
+          onTap: () => _showEmergencyFullScreenDialog(notice),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -713,6 +749,192 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _showEmergencyFullScreenDialog(Map<String, dynamic> notice) async {
+    final title = notice['title'] ?? 'জরুরি নোটিশ / EMERGENCY ALERT';
+    final content = notice['content'] ?? '';
+    final createdAt = notice['created_at'] != null ? DateTime.tryParse(notice['created_at'].toString())?.toLocal() : null;
+    final timeStr = createdAt != null
+        ? '${createdAt.day}/${createdAt.month}/${createdAt.year} ${createdAt.hour}:${createdAt.minute.toString().padLeft(2, '0')}'
+        : '';
+
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black87,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (ctx, anim1, anim2) {
+        return Scaffold(
+          backgroundColor: const Color(0xFF7F1D1D),
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Animated Emergency Icon & Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDC2626),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.red.withValues(alpha: 0.8),
+                              blurRadius: 20,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.crisis_alert_rounded, color: Colors.white, size: 38),
+                      ),
+                      const SizedBox(width: 14),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'EMERGENCY ALERT',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          Text(
+                            'জরুরি নোটিশ ও নির্দেশনা',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  // Emergency Content Card
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEE2E2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.priority_high_rounded, color: Color(0xFFDC2626), size: 16),
+                                SizedBox(width: 4),
+                                Text(
+                                  'HIGHEST PRIORITY BROADCAST',
+                                  style: TextStyle(color: Color(0xFF991B1B), fontWeight: FontWeight.bold, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E293B),
+                              height: 1.3,
+                            ),
+                          ),
+                          if (timeStr.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Published: $timeStr',
+                              style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                          const Divider(height: 24),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Text(
+                                content,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  height: 1.6,
+                                  color: Color(0xFF334155),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFCA5A5)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, color: Color(0xFFDC2626), size: 20),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'অনুগ্রহ করে এই নোটিশটি মনোযোগ দিয়ে পড়ুন এবং ক্লাসমেটদের সাথে শেয়ার করুন।',
+                                    style: TextStyle(fontSize: 12, color: Color(0xFF7F1D1D), fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Acknowledge Button
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _acknowledgedEmergencyNoticeId = notice['id'];
+                      Navigator.pop(ctx);
+                    },
+                    icon: const Icon(Icons.check_circle_outline_rounded, size: 24),
+                    label: const Text('আমি নোটিশটি পড়েছি (I Understand & Acknowledge)'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFFDC2626),
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
