@@ -9,19 +9,48 @@ class CallingScreen extends ConsumerStatefulWidget {
   ConsumerState<CallingScreen> createState() => _CallingScreenState();
 }
 
-class _CallingScreenState extends ConsumerState<CallingScreen> {
+class _CallingScreenState extends ConsumerState<CallingScreen> with SingleTickerProviderStateMixin {
   bool _isLoading = true;
   List<Map<String, dynamic>> _onlineStudents = [];
+
+  // Call state
   bool _isInCall = false;
   Map<String, dynamic>? _activeCallUser;
   bool _isMuted = false;
   bool _isSpeakerOn = true;
-  bool _isWalkieTalkieActive = false;
+
+  // Walkie-Talkie & Intercom State
+  bool _isTransmitting = false;
+  bool _isHandsFreeLocked = false; // Hands-Free Latch mode
+  String _selectedChannel = 'Ch 1: Open Campus';
+  String _connectionMode = 'Campus WiFi (Hybrid)'; // or 'Offline Hotspot / LAN'
+
+  // Pre-configured channels
+  final List<String> _channels = [
+    'Ch 1: Open Campus',
+    'Ch 2: Section 95B',
+    'Ch 3: Section 95C',
+    'Ch 4: CR & Co-CR Special',
+    'Ch 5: Robotics / Dev Lab',
+    'Ch 6: Private Custom Channel',
+  ];
+
+  late AnimationController _waveController;
 
   @override
   void initState() {
     super.initState();
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
     _fetchStudents();
+  }
+
+  @override
+  void dispose() {
+    _waveController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchStudents() async {
@@ -36,7 +65,6 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
 
       if (mounted) {
         setState(() {
-          // Filter out current user
           _onlineStudents = List<Map<String, dynamic>>.from(res)
               .where((u) => u['id'] != currentUserId)
               .toList();
@@ -65,6 +93,13 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
     );
   }
 
+  void _toggleHandsFreeLock() {
+    setState(() {
+      _isHandsFreeLocked = !_isHandsFreeLocked;
+      _isTransmitting = _isHandsFreeLocked;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -73,7 +108,7 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
           children: [
             Icon(Icons.wifi_calling_3_rounded, color: Color(0xFF1E3A8A)),
             SizedBox(width: 8),
-            Text('Campus WiFi Intercom & Calling'),
+            Text('Campus Intercom & Calling'),
           ],
         ),
         actions: [
@@ -84,17 +119,40 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
           ),
         ],
       ),
-      body: _isInCall ? _buildActiveCallView() : _buildStudentListView(),
+      body: _isInCall ? _buildActiveCallView() : _buildIntercomMainView(),
     );
   }
 
-  Widget _buildStudentListView() {
+  Widget _buildIntercomMainView() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Network & P2P Status Banner
+          // Connection Mode Selector (Hybrid vs Offline Hotspot)
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment<String>(
+                value: 'Campus WiFi (Hybrid)',
+                label: Text('Campus WiFi (Multi-Subnet)'),
+                icon: Icon(Icons.wifi_rounded, size: 18),
+              ),
+              ButtonSegment<String>(
+                value: 'Offline Hotspot / LAN',
+                label: Text('Offline Hotspot (No Net)'),
+                icon: Icon(Icons.wifi_tethering_rounded, size: 18),
+              ),
+            ],
+            selected: {_connectionMode},
+            onSelectionChanged: (Set<String> newSelection) {
+              setState(() {
+                _connectionMode = newSelection.first;
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // Network Status Card
           Card(
             color: const Color(0xFF0F172A),
             child: Padding(
@@ -107,22 +165,32 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
                       Container(
                         width: 10,
                         height: 10,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF22C55E),
+                        decoration: BoxDecoration(
+                          color: _connectionMode.contains('Offline')
+                              ? const Color(0xFFF59E0B)
+                              : const Color(0xFF22C55E),
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'P2P WebRTC Campus Calling: Active',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      Text(
+                        _connectionMode.contains('Offline')
+                            ? 'Local UDP Walkie-Talkie (Zero Internet)'
+                            : 'P2P WebRTC Campus Calling: Active',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Connected across campus WiFi subnets (Basement Student Net ⇄ Upstairs Guest Net). Audio calls are 100% free via STUN/WebRTC peer mesh.',
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                  Text(
+                    _connectionMode.contains('Offline')
+                        ? 'Connected via local WiFi router or Mobile Hotspot (192.168.x.x). Works even if university broadband is down.'
+                        : 'Connected across campus subnets (Basement Student Net ⇄ Upstairs Guest Net). Audio is free via WebRTC peer mesh.',
+                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
                   ),
                 ],
               ),
@@ -130,69 +198,200 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Walkie-Talkie Push-to-Talk Card
+          // Channel Frequency Selector Card
           Card(
-            color: const Color(0xFF1E3A8A).withValues(alpha: 0.05),
+            elevation: 1,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Campus Walkie-Talkie',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Press and hold to broadcast instant audio intercom to your batch/section:',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTapDown: (_) => setState(() => _isWalkieTalkieActive = true),
-                    onTapUp: (_) => setState(() => _isWalkieTalkieActive = false),
-                    onTapCancel: () => setState(() => _isWalkieTalkieActive = false),
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: _isWalkieTalkieActive ? Colors.red.shade600 : const Color(0xFF1E3A8A),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: (_isWalkieTalkieActive ? Colors.red : const Color(0xFF1E3A8A)).withValues(alpha: 0.4),
-                            blurRadius: 16,
-                            spreadRadius: 2,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.tune_rounded, color: Color(0xFF1E3A8A), size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Intercom Frequency Channel',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                           ),
                         ],
                       ),
-                      child: Icon(
-                        _isWalkieTalkieActive ? Icons.mic : Icons.mic_none_rounded,
-                        color: Colors.white,
-                        size: 36,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _selectedChannel.split(':').first,
+                          style: const TextStyle(
+                            color: Color(0xFF1E3A8A),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedChannel,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      prefixIcon: const Icon(Icons.radio_rounded, color: Color(0xFF1E3A8A)),
                     ),
+                    items: _channels.map((ch) {
+                      return DropdownMenuItem(
+                        value: ch,
+                        child: Text(ch, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedChannel = val);
+                    },
                   ),
                   const SizedBox(height: 8),
+                  const Text(
+                    'You only hear audio from members tuned into this channel. Prevents noise between different batches/labs.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Walkie-Talkie & Hands-Free Intercom Card
+          Card(
+            color: const Color(0xFF1E3A8A).withValues(alpha: 0.05),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _selectedChannel,
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A), fontSize: 15),
+                          ),
+                          Text(
+                            _isTransmitting
+                                ? (_isHandsFreeLocked ? '🎙️ Hands-Free Mic: LIVE ON' : '🎙️ Transmitting audio...')
+                                : 'Channel Idle (Ready)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: _isTransmitting ? Colors.red.shade700 : Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Hands-Free Lock Toggle Button
+                      ActionChip(
+                        avatar: Icon(
+                          _isHandsFreeLocked ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+                          size: 16,
+                          color: _isHandsFreeLocked ? Colors.white : const Color(0xFF1E3A8A),
+                        ),
+                        label: Text(_isHandsFreeLocked ? 'Lock: ACTIVE' : 'Hands-Free'),
+                        backgroundColor: _isHandsFreeLocked ? Colors.red.shade600 : const Color(0xFFEFF6FF),
+                        labelStyle: TextStyle(
+                          color: _isHandsFreeLocked ? Colors.white : const Color(0xFF1E3A8A),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                        onPressed: _toggleHandsFreeLock,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Big Mic Button (PTT or Tap-to-Lock)
+                  GestureDetector(
+                    onTapDown: (_) {
+                      if (!_isHandsFreeLocked) setState(() => _isTransmitting = true);
+                    },
+                    onTapUp: (_) {
+                      if (!_isHandsFreeLocked) setState(() => _isTransmitting = false);
+                    },
+                    onTapCancel: () {
+                      if (!_isHandsFreeLocked) setState(() => _isTransmitting = false);
+                    },
+                    onTap: () {
+                      if (_isHandsFreeLocked) {
+                        _toggleHandsFreeLock();
+                      }
+                    },
+                    child: AnimatedBuilder(
+                      animation: _waveController,
+                      builder: (context, child) {
+                        final waveSize = _isTransmitting ? 12.0 * _waveController.value : 0.0;
+                        return Container(
+                          width: 86 + waveSize,
+                          height: 86 + waveSize,
+                          decoration: BoxDecoration(
+                            color: _isTransmitting ? Colors.red.shade600 : const Color(0xFF1E3A8A),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_isTransmitting ? Colors.red : const Color(0xFF1E3A8A)).withValues(alpha: 0.4),
+                                blurRadius: 18 + waveSize,
+                                spreadRadius: 2 + waveSize / 2,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            _isTransmitting ? Icons.mic : Icons.mic_none_rounded,
+                            color: Colors.white,
+                            size: 38,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Text(
-                    _isWalkieTalkieActive ? 'Transmitting audio...' : 'Hold to Speak',
+                    _isHandsFreeLocked
+                        ? 'Hands-Free is ON! Your hands are free to work.'
+                        : 'Hold button to speak, or tap "Hands-Free" to lock mic',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: _isWalkieTalkieActive ? Colors.red : const Color(0xFF1E3A8A),
+                      fontWeight: FontWeight.w500,
+                      color: _isHandsFreeLocked ? Colors.red.shade700 : Colors.black87,
                     ),
                   ),
                 ],
               ),
             ),
           ),
+          const SizedBox(height: 24),
 
-          const SizedBox(height: 20),
-          const Text(
-            'Online Students on Campus',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+          // Direct 1-on-1 Student Calling Section
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Direct 1-on-1 Calling',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              ),
+              Text(
+                '${_onlineStudents.length} Available',
+                style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
           if (_isLoading)
             const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
@@ -206,7 +405,7 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
                     const SizedBox(height: 8),
                     const Text('No other students registered yet', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    const Text('Once other classmates join, you can call them directly here.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    const Text('Once classmates log in, you can call them directly with 1-tap.', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   ],
                 ),
               ),
@@ -270,72 +469,62 @@ class _CallingScreenState extends ConsumerState<CallingScreen> {
   }
 
   Widget _buildActiveCallView() {
-    final name = _activeCallUser?['full_name'] ?? _activeCallUser?['email'] ?? 'Student';
+    final name = _activeCallUser?['full_name'] ?? _activeCallUser?['email'] ?? 'Peer';
     final avatar = _activeCallUser?['avatar_url'] as String?;
 
     return Container(
       color: const Color(0xFF0F172A),
-      width: double.infinity,
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircleAvatar(
             radius: 56,
-            backgroundColor: const Color(0xFF1E3A8A),
+            backgroundColor: const Color(0xFF1E293B),
             backgroundImage: avatar != null && avatar.isNotEmpty ? NetworkImage(avatar) : null,
-            child: avatar == null || avatar.isEmpty
-                ? const Icon(Icons.person, size: 64, color: Colors.white)
-                : null,
+            child: avatar == null || avatar.isEmpty ? const Icon(Icons.person, size: 56, color: Colors.white) : null,
           ),
           const SizedBox(height: 20),
           Text(
             name,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.wifi, size: 16, color: Color(0xFF22C55E)),
-              SizedBox(width: 6),
+              Icon(Icons.lock_rounded, size: 14, color: Color(0xFF22C55E)),
+              SizedBox(width: 4),
               Text(
-                'Campus P2P WebRTC Connected • 00:14',
-                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                'End-to-End Encrypted WiFi Call (HD Audio)',
+                style: TextStyle(color: Color(0xFF22C55E), fontSize: 13),
               ),
             ],
           ),
-          const Spacer(),
+          const SizedBox(height: 48),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: _isMuted ? Colors.white : Colors.white24,
-                child: IconButton(
-                  icon: Icon(_isMuted ? Icons.mic_off : Icons.mic, color: _isMuted ? Colors.black : Colors.white),
-                  onPressed: () => setState(() => _isMuted = !_isMuted),
-                ),
+              IconButton.filledTonal(
+                iconSize: 28,
+                icon: Icon(_isMuted ? Icons.mic_off : Icons.mic),
+                onPressed: () => setState(() => _isMuted = !_isMuted),
               ),
-              CircleAvatar(
-                radius: 36,
-                backgroundColor: Colors.red.shade600,
-                child: IconButton(
-                  icon: const Icon(Icons.call_end_rounded, color: Colors.white, size: 32),
-                  onPressed: _endCall,
-                ),
+              const SizedBox(width: 24),
+              IconButton.filled(
+                iconSize: 36,
+                style: IconButton.styleFrom(backgroundColor: Colors.red),
+                icon: const Icon(Icons.call_end_rounded, color: Colors.white),
+                onPressed: _endCall,
               ),
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: _isSpeakerOn ? Colors.white : Colors.white24,
-                child: IconButton(
-                  icon: Icon(_isSpeakerOn ? Icons.volume_up : Icons.volume_down, color: _isSpeakerOn ? Colors.black : Colors.white),
-                  onPressed: () => setState(() => _isSpeakerOn = !_isSpeakerOn),
-                ),
+              const SizedBox(width: 24),
+              IconButton.filledTonal(
+                iconSize: 28,
+                icon: Icon(_isSpeakerOn ? Icons.volume_up : Icons.volume_down),
+                onPressed: () => setState(() => _isSpeakerOn = !_isSpeakerOn),
               ),
             ],
           ),
-          const SizedBox(height: 32),
         ],
       ),
     );
