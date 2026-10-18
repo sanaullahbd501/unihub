@@ -45,12 +45,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             event: PostgresChangeEvent.insert,
             schema: 'public',
             table: 'notices',
-            callback: (payload) {
+            callback: (payload) async {
               final newRecord = payload.newRecord;
               if (newRecord['category'] == 'EMERGENCY') {
-                if (mounted) {
-                  setState(() => _latestEmergencyNotice = newRecord);
-                  _showEmergencyFullScreenDialog(newRecord);
+                final user = SupabaseService.client.auth.currentUser;
+                final isCreator = user != null && newRecord['created_by'] == user.id;
+
+                // Check target groups
+                final tgRes = await SupabaseService.client
+                    .from('notice_target_groups')
+                    .select('group_id')
+                    .eq('notice_id', newRecord['id']);
+                final tgIds = (tgRes as List).map((t) => t['group_id']?.toString()).whereType<String>().toSet();
+                final myGroupIds = _myGroups.map((g) => g['group_id']?.toString()).whereType<String>().toSet();
+
+                if (isCreator || tgIds.isEmpty || myGroupIds.intersection(tgIds).isNotEmpty) {
+                  if (mounted) {
+                    setState(() => _latestEmergencyNotice = newRecord);
+                    _showEmergencyFullScreenDialog(newRecord);
+                  }
                 }
               }
             },
@@ -72,27 +85,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
         final groups = await ref.read(groupsServiceProvider).getMyEnrolledGroups();
 
-        final emergencyNotice = await SupabaseService.client
+        final emergencyNotices = await SupabaseService.client
             .from('notices')
-            .select('id, title, content, created_at')
+            .select('id, title, content, created_at, created_by, notice_target_groups(group_id)')
             .eq('category', 'EMERGENCY')
             .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
+            .limit(10);
+
+        final myGroupIds = groups.map((g) => g['group_id']?.toString()).whereType<String>().toSet();
+        Map<String, dynamic>? matchingEmergency;
+        for (final en in (emergencyNotices as List)) {
+          if (en['created_by'] == user.id) {
+            matchingEmergency = Map<String, dynamic>.from(en);
+            break;
+          }
+          final tg = en['notice_target_groups'] as List<dynamic>? ?? [];
+          if (tg.isEmpty) {
+            matchingEmergency = Map<String, dynamic>.from(en);
+            break;
+          }
+          final tgIds = tg.map((t) => t['group_id']?.toString()).whereType<String>().toSet();
+          if (myGroupIds.intersection(tgIds).isNotEmpty) {
+            matchingEmergency = Map<String, dynamic>.from(en);
+            break;
+          }
+        }
 
         if (mounted) {
           setState(() {
             _userProfile = profile;
             _myGroups = groups;
-            _latestEmergencyNotice = emergencyNotice;
+            _latestEmergencyNotice = matchingEmergency;
             _isLoading = false;
           });
 
           // Automatically surface screen-filling alert if unacknowledged
-          if (emergencyNotice != null && _acknowledgedEmergencyNoticeId != emergencyNotice['id']) {
+          if (matchingEmergency != null && _acknowledgedEmergencyNoticeId != matchingEmergency['id']) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showEmergencyFullScreenDialog(emergencyNotice);
+                _showEmergencyFullScreenDialog(matchingEmergency!);
               }
             });
           }

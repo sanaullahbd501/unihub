@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/services/supabase_service.dart';
+import '../groups/groups_service.dart';
 import 'routine_service.dart';
 
 class RoutineScreen extends ConsumerStatefulWidget {
@@ -55,8 +56,19 @@ class _RoutineScreenState extends ConsumerState<RoutineScreen> with SingleTicker
         final role = (profile?['role']?.toString().toUpperCase()) ?? 'STUDENT';
         _isCr = role == 'CR' || role == 'ADMIN';
 
-        final routines = await ref.read(routineServiceProvider).getRoutines();
-        final exams = await ref.read(routineServiceProvider).getActiveExams();
+        final myGroups = await ref.read(groupsServiceProvider).getMyEnrolledGroups();
+        final myGroupIds = myGroups.map((g) => g['group_id']?.toString()).whereType<String>().toSet();
+
+        final allRoutines = await ref.read(routineServiceProvider).getRoutines();
+        final allExams = await ref.read(routineServiceProvider).getActiveExams();
+
+        // CRs and Admins see all routines/exams, students only see their own sections
+        final routines = _isCr
+            ? allRoutines
+            : allRoutines.where((r) => myGroupIds.contains(r['group_id']?.toString())).toList();
+        final exams = _isCr
+            ? allExams
+            : allExams.where((e) => myGroupIds.contains(e['group_id']?.toString())).toList();
 
         if (mounted) {
           setState(() {

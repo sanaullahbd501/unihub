@@ -421,8 +421,24 @@ class _NoticesScreenState extends ConsumerState<NoticesScreen> {
                                                     ),
                                                   );
                                                   if (confirm == true) {
-                                                    await ref.read(noticesServiceProvider).deleteNotice(item['id']);
-                                                    _fetchNotices();
+                                                    try {
+                                                      await ref.read(noticesServiceProvider).deleteNotice(item['id']);
+                                                      _fetchNotices();
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          const SnackBar(
+                                                            content: Text('Notice deleted successfully.'),
+                                                            backgroundColor: Color(0xFFDC2626),
+                                                          ),
+                                                        );
+                                                      }
+                                                    } catch (e) {
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(content: Text('Failed to delete notice: $e')),
+                                                        );
+                                                      }
+                                                    }
                                                   }
                                                 },
                                               ),

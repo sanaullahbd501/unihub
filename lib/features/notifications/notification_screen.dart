@@ -21,16 +21,67 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Future<void> _fetchNotifications() async {
     setState(() => _isLoading = true);
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
     try {
+      // Get user's enrolled group IDs
+      final memberRes = await _supabase
+          .from('group_members')
+          .select('group_id')
+          .eq('user_id', user.id);
+      final myGroupIds = (memberRes as List)
+          .map((m) => m['group_id']?.toString())
+          .whereType<String>()
+          .toSet();
+
+      // Check user role
+      final profile = await _supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+      final role = (profile?['role']?.toString().toLowerCase()) ?? 'student';
+      final isAdmin = role == 'admin';
+
       final res = await _supabase
           .from('notifications')
-          .select('id, title, body, type, created_at, deep_link')
+          .select('id, title, body, type, created_at, deep_link, data, created_by, target_type')
           .order('created_at', ascending: false)
-          .limit(50);
+          .limit(100);
+
+      final filtered = (res as List).where((n) {
+        if (isAdmin || n['created_by'] == user.id) return true;
+        if (n['target_type'] == 'ALL') return true;
+
+        final data = n['data'] as Map<String, dynamic>?;
+        if (data == null) return true;
+
+        // Check target_group_ids list
+        if (data.containsKey('target_group_ids')) {
+          final tGroups = (data['target_group_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toSet() ?? {};
+          if (tGroups.isEmpty) return true;
+          return myGroupIds.intersection(tGroups).isNotEmpty;
+        }
+
+        // Check single group_id
+        if (data.containsKey('group_id')) {
+          final gid = data['group_id']?.toString();
+          if (gid == null || gid.isEmpty) return true;
+          return myGroupIds.contains(gid);
+        }
+
+        return true;
+      }).toList();
 
       if (mounted) {
         setState(() {
-          _notifications = List<Map<String, dynamic>>.from(res);
+          _notifications = List<Map<String, dynamic>>.from(filtered);
           _isLoading = false;
         });
       }
