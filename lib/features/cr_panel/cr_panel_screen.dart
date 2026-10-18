@@ -746,17 +746,55 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          if (_selectedCategory == 'EMERGENCY') ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade400, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          '🚨 Emergency Mode Activated',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF991B1B), fontSize: 14),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'This notice will appear in bold Red Alert style with high-priority banners for all students in target sections.',
+                          style: TextStyle(color: Color(0xFF7F1D1D), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           ElevatedButton.icon(
             onPressed: _isPublishing ? null : _handleBroadcast,
             icon: _isPublishing
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.send_rounded),
-            label: Text(_isPublishing ? 'Publishing & Sending...' : 'Publish Notice & Notify Students'),
+                : Icon(_selectedCategory == 'EMERGENCY' ? Icons.crisis_alert_rounded : Icons.send_rounded),
+            label: Text(_isPublishing
+                ? 'Publishing & Sending...'
+                : (_selectedCategory == 'EMERGENCY'
+                    ? '🚨 Broadcast Emergency Alert'
+                    : 'Publish Notice & Notify Students')),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: const Color(0xFF1E3A8A),
+              backgroundColor: _selectedCategory == 'EMERGENCY' ? const Color(0xFFDC2626) : const Color(0xFF1E3A8A),
               foregroundColor: Colors.white,
+              textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
           ),
         ],

@@ -17,6 +17,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Map<String, dynamic>? _userProfile;
   List<Map<String, dynamic>> _myGroups = [];
+  Map<String, dynamic>? _latestEmergencyNotice;
   bool _isLoading = true;
 
   @override
@@ -40,10 +41,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
         final groups = await ref.read(groupsServiceProvider).getMyEnrolledGroups();
 
+        final emergencyNotice = await SupabaseService.client
+            .from('notices')
+            .select('id, title, content, created_at')
+            .eq('category', 'EMERGENCY')
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
         if (mounted) {
           setState(() {
             _userProfile = profile;
             _myGroups = groups;
+            _latestEmergencyNotice = emergencyNotice;
             _isLoading = false;
           });
         }
@@ -316,6 +326,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Pinned Emergency Alert Banner
+                        if (_latestEmergencyNotice != null)
+                          _buildEmergencyBanner(_latestEmergencyNotice!),
+
                         // User Profile Card
                         Card(
                           child: Padding(
@@ -606,6 +620,96 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmergencyBanner(Map<String, dynamic> notice) {
+    final title = notice['title'] ?? 'Emergency Announcement';
+    final content = notice['content'] ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDC2626), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withValues(alpha: 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => context.push('/notices'),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.crisis_alert_rounded, color: Colors.white, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDC2626),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              '🚨 URGENT',
+                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF991B1B),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        content,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF7F1D1D),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right_rounded, color: Color(0xFFDC2626)),
+              ],
+            ),
           ),
         ),
       ),

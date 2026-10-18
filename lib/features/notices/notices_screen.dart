@@ -135,100 +135,241 @@ class _NoticesScreenState extends ConsumerState<NoticesScreen> {
                       final createdAtStr = item['created_at'] as String?;
                       final targetGroups = item['notice_target_groups'] as List<dynamic>? ?? [];
 
-                      Color badgeColor = const Color(0xFF1E3A8A);
-                      if (category == 'EMERGENCY') badgeColor = Colors.red.shade700;
-                      if (category == 'ROUTINE') badgeColor = Colors.orange.shade700;
-                      if (category == 'EXAM') badgeColor = Colors.purple.shade700;
+                      final isEmergency = category == 'EMERGENCY';
+                      final isExam = category == 'EXAM';
+                      final isRoutine = category == 'ROUTINE';
 
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: badgeColor.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      category,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: badgeColor,
-                                      ),
-                                    ),
+                      Color cardBg = Colors.white;
+                      Color borderColor = const Color(0xFFE2E8F0);
+                      double borderWidth = 1.0;
+                      Color badgeBg = const Color(0xFF1E3A8A).withValues(alpha: 0.1);
+                      Color badgeText = const Color(0xFF1E3A8A);
+                      IconData categoryIcon = Icons.article_rounded;
+
+                      if (isEmergency) {
+                        cardBg = const Color(0xFFFEF2F2); // Red emergency tint
+                        borderColor = const Color(0xFFEF4444); // Bright Red border
+                        borderWidth = 2.0;
+                        badgeBg = const Color(0xFFDC2626);
+                        badgeText = Colors.white;
+                        categoryIcon = Icons.crisis_alert_rounded;
+                      } else if (isExam) {
+                        cardBg = const Color(0xFFFAF5FF); // Purple tint
+                        borderColor = const Color(0xFFC084FC);
+                        badgeBg = Colors.purple.shade700;
+                        badgeText = Colors.white;
+                        categoryIcon = Icons.assignment_late_rounded;
+                      } else if (isRoutine) {
+                        cardBg = const Color(0xFFFFFBEB); // Amber tint
+                        borderColor = const Color(0xFFFCD34D);
+                        badgeBg = Colors.amber.shade800;
+                        badgeText = Colors.white;
+                        categoryIcon = Icons.event_note_rounded;
+                      }
+
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: borderColor, width: borderWidth),
+                          boxShadow: isEmergency
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.red.withValues(alpha: 0.2),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 4),
                                   ),
-                                  const Spacer(),
-                                  if (createdAtStr != null)
-                                    Text(
-                                      createdAtStr.substring(0, 10),
-                                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                    ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
                                 ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                title,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                content,
-                                style: const TextStyle(fontSize: 14, color: Color(0xFF334155), height: 1.4),
-                              ),
-                              if (eventTimeStr != null) ...[
-                                const SizedBox(height: 12),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Left colored accent indicator bar
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.amber.shade200),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.schedule_rounded, size: 16, color: Colors.brown),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Class / Event Time: ${DateTime.tryParse(eventTimeStr)?.toLocal().toString().substring(0, 16) ?? eventTimeStr}',
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown),
-                                      ),
-                                    ],
-                                  ),
+                                  width: isEmergency ? 8 : 4,
+                                  color: isEmergency
+                                      ? const Color(0xFFDC2626)
+                                      : (isExam
+                                          ? Colors.purple.shade700
+                                          : (isRoutine ? Colors.amber.shade800 : const Color(0xFF1E3A8A))),
                                 ),
-                              ],
-                              if (targetGroups.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    const Text('Target: ', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-                                    Wrap(
-                                      spacing: 6,
-                                      children: targetGroups.map<Widget>((tg) {
-                                        final groupName = tg['class_groups']?['name'] ?? 'Group';
-                                        return Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFE2E8F0),
-                                            borderRadius: BorderRadius.circular(4),
+
+                                // Main Content Body
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        // Header Row with Badge & Time
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: badgeBg,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(categoryIcon, size: 14, color: badgeText),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    isEmergency ? '🚨 EMERGENCY ALERT' : category,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: badgeText,
+                                                      letterSpacing: isEmergency ? 0.5 : 0,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            if (createdAtStr != null)
+                                              Text(
+                                                createdAtStr.substring(0, 10),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: isEmergency ? FontWeight.bold : FontWeight.normal,
+                                                  color: isEmergency ? Colors.red.shade800 : Colors.grey,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+
+                                        // Title
+                                        Text(
+                                          title,
+                                          style: TextStyle(
+                                            fontSize: isEmergency ? 20 : 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: isEmergency ? const Color(0xFF991B1B) : const Color(0xFF0F172A),
                                           ),
-                                          child: Text(
-                                            groupName,
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                        ),
+                                        const SizedBox(height: 8),
+
+                                        // Content
+                                        Text(
+                                          content,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: isEmergency ? const Color(0xFF7F1D1D) : const Color(0xFF334155),
+                                            height: 1.45,
+                                            fontWeight: isEmergency ? FontWeight.w500 : FontWeight.normal,
                                           ),
-                                        );
-                                      }).toList(),
+                                        ),
+
+                                        // Emergency Urgent Banner Box
+                                        if (isEmergency) ...[
+                                          const SizedBox(height: 12),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red.shade100,
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.red.shade300),
+                                            ),
+                                            child: const Row(
+                                              children: [
+                                                Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFF991B1B)),
+                                                SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    'High-Priority Notice: Action or immediate attention required.',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF991B1B),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+
+                                        // Event / Class Time (if present)
+                                        if (eventTimeStr != null) ...[
+                                          const SizedBox(height: 12),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: isEmergency ? Colors.red.shade50 : Colors.amber.shade50,
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: isEmergency ? Colors.red.shade200 : Colors.amber.shade200),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.schedule_rounded,
+                                                  size: 16,
+                                                  color: isEmergency ? Colors.red.shade800 : Colors.brown,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  'Class / Event Time: ${DateTime.tryParse(eventTimeStr)?.toLocal().toString().substring(0, 16) ?? eventTimeStr}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: isEmergency ? Colors.red.shade900 : Colors.brown,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+
+                                        // Target Section Badges
+                                        if (targetGroups.isNotEmpty) ...[
+                                          const SizedBox(height: 12),
+                                          Row(
+                                            children: [
+                                              const Text('Target: ', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                                              Wrap(
+                                                spacing: 6,
+                                                children: targetGroups.map<Widget>((tg) {
+                                                  final groupName = tg['class_groups']?['name'] ?? 'Group';
+                                                  return Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: isEmergency ? Colors.red.shade100 : const Color(0xFFE2E8F0),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                    ),
+                                                    child: Text(
+                                                      groupName,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: isEmergency ? Colors.red.shade900 : const Color(0xFF1E293B),
+                                                      ),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       );
