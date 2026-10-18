@@ -90,7 +90,16 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // 1. Parse payload
-    const { title, body, type = "GENERAL", deep_link = "/notifications", target_user_id } = await req.json();
+    const {
+      title,
+      body,
+      type = "GENERAL",
+      deep_link = "/notifications",
+      target_user_id,
+      target_group_ids = [],
+      notice_id,
+      created_by,
+    } = await req.json();
 
     if (!title || !body) {
       return new Response(JSON.stringify({ error: "title and body are required" }), {
@@ -106,40 +115,81 @@ serve(async (req) => {
     }
     const serviceAccount = JSON.parse(rawSecret);
 
-    // 3. Get Google OAuth2 token for FCM
-    const accessToken = await getGoogleAccessToken(serviceAccount);
-
-    // 4. Query active target device tokens
-    let query = supabase.from("notification_tokens").select("fcm_token, user_id").eq("is_active", true);
+    // 3. Resolve target user IDs
+    let targetUserIds: string[] = [];
     if (target_user_id) {
-      query = query.eq("user_id", target_user_id);
-    }
-    const { data: tokens, error: tokenError } = await query;
+      targetUserIds = [target_user_id];
+    } else if (target_group_ids && target_group_ids.length > 0) {
+      const { data: members, error: memErr } = await supabase
+        .from("group_members")
+        .select("user_id")
+        .in("group_id", target_group_ids);
 
+      if (memErr) throw memErr;
+      targetUserIds = Array.from(new Set(members?.map((m: any) => m.user_id) || []));
+    }
+
+    // 4. Store central notification record
+    const { data: notifData, error: notifErr } = await supabase
+      .from("notifications")
+      .insert({
+        title,
+        body,
+        type,
+        deep_link,
+        target_type: target_user_id ? "USER" : target_group_ids.length > 0 ? "BATCH" : "ALL",
+        target_user_id: target_user_id || null,
+        created_by: created_by || null,
+        data: {
+          notice_id: notice_id || null,
+          target_groups: target_group_ids,
+        },
+      })
+      .select()
+      .single();
+
+    if (notifErr) throw notifErr;
+
+    // 5. Populate notification_receivers for targeted users
+    if (targetUserIds.length > 0 && notifData?.id) {
+      const receiverRows = targetUserIds.map((uid) => ({
+        notification_id: notifData.id,
+        user_id: uid,
+        is_read: false,
+      }));
+      await supabase.from("notification_receivers").upsert(receiverRows, { onConflict: "notification_id,user_id" });
+    }
+
+    // 6. Query active FCM tokens
+    let tokenQuery = supabase.from("notification_tokens").select("fcm_token, user_id").eq("is_active", true);
+    if (targetUserIds.length > 0) {
+      tokenQuery = tokenQuery.in("user_id", targetUserIds);
+    }
+    const { data: tokens, error: tokenError } = await tokenQuery;
     if (tokenError) throw tokenError;
 
     if (!tokens || tokens.length === 0) {
-      return new Response(JSON.stringify({ message: "No active device tokens found to send." }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Notification saved in database; no active mobile device tokens currently registered.",
+          notification_id: notifData?.id,
+          target_users_count: targetUserIds.length,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
-    // 5. Store central notification in database
-    const { data: notifData } = await supabase.from("notifications").insert({
-      title,
-      body,
-      type,
-      deep_link,
-      target_type: target_user_id ? "USER" : "ALL",
-      target_user_id: target_user_id || null,
-    }).select().single();
-
-    // 6. Send push to each token via FCM v1 API
+    // 7. Get Google OAuth2 token for FCM v1
+    const accessToken = await getGoogleAccessToken(serviceAccount);
     const projectId = serviceAccount.project_id;
     const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
     const results = [];
 
+    // 8. Dispatch FCM push to each device
     for (const item of tokens) {
       const fcmPayload = {
         message: {
@@ -172,15 +222,24 @@ serve(async (req) => {
       const pushData = await pushRes.json();
       results.push({ token: item.fcm_token, ok: pushRes.ok, response: pushData });
 
-      // If token is unregistered or invalid, mark it inactive in DB
+      // Mark stale/unregistered tokens inactive
       if (!pushRes.ok && pushData?.error?.details?.some((d: any) => d.errorCode === "UNREGISTERED")) {
         await supabase.from("notification_tokens").update({ is_active: false }).eq("fcm_token", item.fcm_token);
       }
     }
 
-    return new Response(JSON.stringify({ success: true, count: tokens.length, results }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        notification_id: notifData?.id,
+        tokens_count: tokens.length,
+        target_users_count: targetUserIds.length,
+        results,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,

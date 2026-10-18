@@ -4,7 +4,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/services/supabase_service.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/verify_otp_screen.dart';
+import '../features/cr_panel/cr_panel_screen.dart';
+import '../features/groups/join_group_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/notices/notices_screen.dart';
 import '../features/notifications/notification_screen.dart';
 import '../features/splash/splash_screen.dart';
 
@@ -82,6 +85,21 @@ class AppRouter {
       GoRoute(
         path: '/notifications',
         builder: (context, state) => const NotificationScreen(),
+      ),
+
+      GoRoute(
+        path: '/cr-panel',
+        builder: (context, state) => const CrPanelScreen(),
+      ),
+
+      GoRoute(
+        path: '/notices',
+        builder: (context, state) => const NoticesScreen(),
+      ),
+
+      GoRoute(
+        path: '/join-group',
+        builder: (context, state) => const JoinGroupScreen(),
       ),
     ],
   );
