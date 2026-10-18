@@ -603,6 +603,36 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
     );
   }
 
+  Future<void> _showSelectSectionDialog(String classId, String className, List<dynamic> groups) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Select Section - $className'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: groups.map((g) {
+            final gId = g['id'] as String;
+            final gName = g['name'] ?? '';
+            final isLocked = g['is_join_locked'] == true;
+            return ListTile(
+              leading: const Icon(Icons.group_rounded, color: Color(0xFF1E3A8A)),
+              title: Text('Section: $gName', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text('Code: ${g['invite_code'] ?? ''} • ${isLocked ? "🔒 Locked" : "🔓 Open"}'),
+              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showGroupMembersDialog(classId, className, gId, gName, isLocked);
+              },
+            );
+          }).toList(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showAddCoCrDialog(String classId) async {
     final emailCtrl = TextEditingController();
 
@@ -916,6 +946,28 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
             ],
           ),
           const SizedBox(height: 16),
+          if (_classes.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.people_alt_rounded, color: Color(0xFF1E3A8A), size: 22),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'ছাত্র তালিকা ও নিয়ন্ত্রণ: প্রতিটি সেকশনের নিচে "View & Manage Students" বাটনে ক্লিক করে রোল/নাম্বার সহ ছাত্রদের তালিকা দেখা যাবে, নতুন ছাত্র এড করা যাবে অথবা অনাকাঙ্ক্ষিত ছাত্র রিমুভ করা যাবে।',
+                      style: TextStyle(fontSize: 12.5, color: Color(0xFF1E3A8A), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_classes.isEmpty)
             Card(
               child: Padding(
@@ -990,11 +1042,33 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                             ),
                             PopupMenuButton<String>(
                               onSelected: (val) {
+                                if (val == 'view_students') {
+                                  if (groups.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Please add a section first.')),
+                                    );
+                                  } else if (groups.length == 1) {
+                                    final g = groups.first;
+                                    _showGroupMembersDialog(classId, className, g['id'], g['name'] ?? '', g['is_join_locked'] == true);
+                                  } else {
+                                    _showSelectSectionDialog(classId, className, groups);
+                                  }
+                                }
                                 if (val == 'add_group') _showAddGroupDialog(classId, className);
                                 if (val == 'add_co_cr') _showAddCoCrDialog(classId);
                                 if (val == 'delete_class') _confirmDeleteClass(classId, className);
                               },
                               itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'view_students',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.people_alt_rounded, size: 18, color: Color(0xFF1E3A8A)),
+                                      SizedBox(width: 8),
+                                      Text('View Students (ছাত্র তালিকা)'),
+                                    ],
+                                  ),
+                                ),
                                 const PopupMenuItem(
                                   value: 'add_group',
                                   child: Row(
@@ -1040,23 +1114,38 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                             TextButton.icon(
                               onPressed: () => _showAddGroupDialog(classId, className),
                               icon: const Icon(Icons.add, size: 16),
-                              label: const Text('Add Group'),
+                              label: const Text('Add Section'),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         if (groups.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text(
-                              'No sections added yet (e.g. 95B, 95C). Click "Add Group" to create one.',
-                              style: TextStyle(color: Colors.grey, fontSize: 13),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Column(
+                              children: [
+                                const Icon(Icons.group_add_outlined, color: Colors.grey, size: 36),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'No sections created yet (e.g. Section A, 95B, 95C).',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Click "+ Add Section" above to create a section and get an invite code for students.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                                ),
+                              ],
                             ),
                           )
                         else
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                          Column(
                             children: groups.map<Widget>((g) {
                               final gId = g['id'] as String;
                               final gName = g['name'] ?? '';
@@ -1064,98 +1153,169 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                               final isLocked = g['is_join_locked'] == true;
 
                               return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: isLocked ? const Color(0xFFFEF2F2) : const Color(0xFFEFF6FF),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: isLocked ? const Color(0xFFFECACA) : const Color(0xFFBFDBFE)),
+                                  color: isLocked ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isLocked ? const Color(0xFFFECACA) : const Color(0xFFBBF7D0),
+                                    width: 1.2,
+                                  ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(
-                                      isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                                      size: 16,
-                                      color: isLocked ? Colors.red.shade700 : const Color(0xFF1E3A8A),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '$gName ($code)',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: isLocked ? Colors.red.shade900 : const Color(0xFF1E3A8A),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    // Lock / Unlock toggle button
-                                    InkWell(
-                                      onTap: () async {
-                                        final messenger = ScaffoldMessenger.of(context);
-                                        try {
-                                          await ref.read(groupsServiceProvider).toggleGroupJoinLock(
-                                            groupId: gId,
-                                            isLocked: !isLocked,
-                                          );
-                                          _loadData();
-                                          if (mounted) {
-                                            messenger.showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  !isLocked
-                                                      ? 'Section "$gName" is now LOCKED (শুধু CR এড করতে পারবে)'
-                                                      : 'Section "$gName" is now OPEN for joining with code',
-                                                ),
-                                                backgroundColor: !isLocked ? Colors.red.shade800 : Colors.green.shade800,
-                                              ),
-                                            );
-                                          }
-                                        } catch (e) {
-                                          if (mounted) {
-                                            messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
-                                          }
-                                        }
-                                      },
-                                      child: Tooltip(
-                                        message: isLocked ? 'Locked: Click to open joining' : 'Open: Click to lock joining',
-                                        child: Icon(
-                                          isLocked ? Icons.lock : Icons.lock_open,
-                                          size: 16,
-                                          color: isLocked ? Colors.red : Colors.grey.shade600,
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: isLocked ? Colors.red.shade700 : const Color(0xFF1E3A8A),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            'Section: $gName',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
                                         ),
-                                      ),
+                                        const SizedBox(width: 8),
+                                        // Invite code badge
+                                        InkWell(
+                                          onTap: () {
+                                            Clipboard.setData(ClipboardData(text: code));
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text('Copied invite code: $code')),
+                                            );
+                                          },
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: Colors.grey.shade300),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.vpn_key_rounded, size: 14, color: Color(0xFF0284C7)),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Code: $code',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12,
+                                                    letterSpacing: 0.5,
+                                                    color: Color(0xFF0F172A),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                const Icon(Icons.copy_rounded, size: 13, color: Colors.grey),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        // Delete section button
+                                        IconButton(
+                                          icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                                          tooltip: 'Delete Section',
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () => _confirmDeleteGroup(gId, gName),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 8),
-                                    // View Members Roster button
-                                    InkWell(
-                                      onTap: () => _showGroupMembersDialog(classId, className, gId, gName, isLocked),
-                                      child: const Tooltip(
-                                        message: 'View & Manage Students (ছাত্র তালিকা)',
-                                        child: Icon(Icons.people_alt_outlined, size: 16, color: Color(0xFF1E3A8A)),
-                                      ),
+                                    const SizedBox(height: 10),
+                                    // Status explanation text
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                                          size: 15,
+                                          color: isLocked ? Colors.red.shade700 : Colors.green.shade700,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            isLocked
+                                                ? '🔒 Joining Locked: নতুন ছাত্র কোড দিয়ে জয়েন করতে পারবে না (Only CR can add)'
+                                                : '🔓 Joining Open: কোড দিয়ে যে কেউ এই সেকশনে জয়েন করতে পারবে',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isLocked ? Colors.red.shade800 : Colors.green.shade800,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 8),
-                                    // Copy invite code button
-                                    InkWell(
-                                      onTap: () {
-                                        Clipboard.setData(ClipboardData(text: code));
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Copied invite code: $code')),
-                                        );
-                                      },
-                                      child: const Tooltip(
-                                        message: 'Copy invite code',
-                                        child: Icon(Icons.copy_rounded, size: 16, color: Color(0xFF0284C7)),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    // Delete section button
-                                    InkWell(
-                                      onTap: () => _confirmDeleteGroup(gId, gName),
-                                      child: const Tooltip(
-                                        message: 'Delete section',
-                                        child: Icon(Icons.close_rounded, size: 16, color: Colors.red),
-                                      ),
+                                    const SizedBox(height: 12),
+                                    // Big visible buttons row
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        ElevatedButton.icon(
+                                          onPressed: () => _showGroupMembersDialog(classId, className, gId, gName, isLocked),
+                                          icon: const Icon(Icons.people_alt_rounded, size: 18),
+                                          label: const Text('👥 View & Manage Students (ছাত্র তালিকা)'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFF1E3A8A),
+                                            foregroundColor: Colors.white,
+                                            elevation: 1,
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          ),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: () async {
+                                            final messenger = ScaffoldMessenger.of(context);
+                                            try {
+                                              await ref.read(groupsServiceProvider).toggleGroupJoinLock(
+                                                groupId: gId,
+                                                isLocked: !isLocked,
+                                              );
+                                              _loadData();
+                                              if (mounted) {
+                                                messenger.showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      !isLocked
+                                                          ? 'Section "$gName" is now LOCKED (শুধু CR এড করতে পারবে)'
+                                                          : 'Section "$gName" is now OPEN for joining with code',
+                                                    ),
+                                                    backgroundColor: !isLocked ? Colors.red.shade800 : Colors.green.shade800,
+                                                  ),
+                                                );
+                                              }
+                                            } catch (e) {
+                                              if (mounted) {
+                                                messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+                                              }
+                                            }
+                                          },
+                                          icon: Icon(
+                                            isLocked ? Icons.lock_open_rounded : Icons.lock_rounded,
+                                            size: 16,
+                                          ),
+                                          label: Text(
+                                            isLocked ? 'Unlock Joining (অনুমোদন খুলুন)' : 'Lock Joining (জয়েন লক করুন)',
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: isLocked ? Colors.green.shade800 : Colors.red.shade800,
+                                            side: BorderSide(color: isLocked ? Colors.green.shade400 : Colors.red.shade400),
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
