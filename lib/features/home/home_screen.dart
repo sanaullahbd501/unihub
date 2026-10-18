@@ -287,6 +287,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.wifi_calling_3_rounded, color: Color(0xFF1E3A8A)),
+            onPressed: () => context.push('/campus-call'),
+            tooltip: 'Campus WiFi Calling',
+          ),
+          IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () => context.push('/notifications'),
             tooltip: 'Notifications',
@@ -528,6 +533,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   const SnackBar(content: Text('Routine module: use notices for routine changes.')),
                                 );
                               },
+                            ),
+                            _buildFeatureCard(
+                              title: 'Campus Intercom',
+                              subtitle: 'Free P2P WiFi calling',
+                              icon: Icons.wifi_calling_3_rounded,
+                              color: const Color(0xFF059669),
+                              onTap: () => context.push('/campus-call'),
                             ),
                             _buildFeatureCard(
                               title: 'Notifications',
