@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/supabase_service.dart';
 
@@ -14,10 +15,11 @@ class AuthService {
 
   /// Sends a one-time OTP email for login or signup (supports both 1-click magic link and 6-digit OTP code)
   Future<void> signInWithEmailOtp(String email) async {
+    final redirectTo = kIsWeb ? 'http://localhost:8080' : 'io.supabase.unihub://login-callback';
     await _client.auth.signInWithOtp(
       email: email.trim(),
       shouldCreateUser: true,
-      emailRedirectTo: 'io.supabase.unihub://login-callback',
+      emailRedirectTo: redirectTo,
     );
   }
 
