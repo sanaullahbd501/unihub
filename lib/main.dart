@@ -19,8 +19,16 @@ Future<void> main() async {
   }
 
   // 2. Initialize Supabase
-  final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? 'https://sgsctjaywrhuituohigl.supabase.co';
-  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+  const defaultSupabaseUrl = 'https://sgsctjaywrhuituohigl.supabase.co';
+  const defaultSupabaseAnonKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNnc2N0amF5d3JodWl0dW9oaWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzMDQ1NzcsImV4cCI6MjEwNzg4MDU3N30.vQkIjjC7x1dtGqCpryrqUeN1MO0Aai3LtgPmH4NJEms';
+
+  final supabaseUrl = (dotenv.env['SUPABASE_URL']?.isNotEmpty ?? false)
+      ? dotenv.env['SUPABASE_URL']!
+      : defaultSupabaseUrl;
+  final supabaseAnonKey = (dotenv.env['SUPABASE_ANON_KEY']?.isNotEmpty ?? false)
+      ? dotenv.env['SUPABASE_ANON_KEY']!
+      : defaultSupabaseAnonKey;
 
   await Supabase.initialize(
     url: supabaseUrl,
