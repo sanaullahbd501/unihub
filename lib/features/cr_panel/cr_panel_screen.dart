@@ -50,23 +50,30 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
     setState(() => _isLoading = true);
     try {
       final classes = await ref.read(groupsServiceProvider).getMyManagedClasses();
+      if (mounted) {
+        setState(() {
+          _classes = classes;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading classes: $e');
+    }
+
+    try {
       final routines = await ref.read(routineServiceProvider).getRoutines();
       final exams = await ref.read(routineServiceProvider).getActiveExams();
       if (mounted) {
         setState(() {
-          _classes = classes;
           _routines = routines;
           _exams = exams;
-          _isLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading classes: $e')),
-        );
-      }
+      debugPrint('Error loading routines/exams: $e');
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
 

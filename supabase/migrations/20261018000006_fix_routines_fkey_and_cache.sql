@@ -1,0 +1,68 @@
+DROP TABLE IF EXISTS public.routines CASCADE;
+DROP TABLE IF EXISTS public.exams CASCADE;
+
+-- Recreate routines table with explicit columns and foreign keys
+CREATE TABLE public.routines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_id UUID REFERENCES public.classes(id) ON DELETE CASCADE,
+    group_id UUID NOT NULL REFERENCES public.class_groups(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL,
+    teacher_name TEXT,
+    day_of_week INT NOT NULL, -- 1=Monday, ..., 7=Sunday
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    is_online BOOLEAN NOT NULL DEFAULT false,
+    room_number TEXT,
+    meeting_link TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Recreate exams table with explicit columns and foreign keys
+CREATE TABLE public.exams (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_id UUID REFERENCES public.classes(id) ON DELETE CASCADE,
+    group_id UUID NOT NULL REFERENCES public.class_groups(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL,
+    exam_type TEXT NOT NULL, -- 'CT', 'MID', 'FINAL', 'QUIZ'
+    exam_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    room_number TEXT,
+    is_online BOOLEAN NOT NULL DEFAULT false,
+    meeting_link TEXT,
+    delete_at TIMESTAMPTZ NOT NULL, -- Auto-expiring 3 hours after end_time
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Enable RLS
+ALTER TABLE public.routines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+
+-- Routines policies
+CREATE POLICY "Public read routines" ON public.routines FOR SELECT USING (true);
+CREATE POLICY "Authenticated insert routines" ON public.routines FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated update routines" ON public.routines FOR UPDATE TO authenticated USING (true);
+CREATE POLICY "Authenticated delete routines" ON public.routines FOR DELETE TO authenticated USING (true);
+
+-- Exams policies
+CREATE POLICY "Public read exams" ON public.exams FOR SELECT USING (true);
+CREATE POLICY "Authenticated insert exams" ON public.exams FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated update exams" ON public.exams FOR UPDATE TO authenticated USING (true);
+CREATE POLICY "Authenticated delete exams" ON public.exams FOR DELETE TO authenticated USING (true);
+
+-- Enable realtime
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.routines;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.exams;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+END $$;
+
+-- Reload PostgREST schema cache
+NOTIFY pgrst, 'reload schema';
