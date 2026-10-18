@@ -13,7 +13,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Map<String, dynamic>? _userProfile;
-  bool _isLoadingProfile = true;
 
   @override
   void initState() {
@@ -36,14 +35,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (mounted) {
           setState(() {
             _userProfile = data;
-            _isLoadingProfile = false;
           });
         }
-      } catch (e) {
-        if (mounted) setState(() => _isLoadingProfile = false);
-      }
-    } else {
-      if (mounted) setState(() => _isLoadingProfile = false);
+      } catch (_) {}
     }
   }
 

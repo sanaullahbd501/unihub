@@ -86,7 +86,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
                   itemCount: _notifications.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final item = _notifications[index];
                     final title = item['title'] ?? 'Notification';
