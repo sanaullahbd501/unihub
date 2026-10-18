@@ -58,6 +58,26 @@ class NoticesService {
 
     await _supabase.from('notice_target_groups').insert(groupMappings);
 
+    // 2.1 Always record into notifications table so all students see it in their Notifications tab
+    try {
+      await _supabase.from('notifications').insert({
+        'title': title.trim(),
+        'body': content.trim(),
+        'type': category == 'EMERGENCY' ? 'EMERGENCY' : (category == 'ROUTINE' ? 'ROUTINE' : 'NOTICE'),
+        'target_type': 'GROUP',
+        'priority': category == 'EMERGENCY' ? 'HIGH' : 'NORMAL',
+        'deep_link': '/notices',
+        'data': {
+          'notice_id': noticeId,
+          'target_group_ids': targetGroupIds,
+          'category': category,
+        },
+        'created_by': user.id,
+      });
+    } catch (_) {
+      // Non-blocking
+    }
+
     // 3. Trigger Supabase Edge Function to dispatch FCM Push Notification
     if (sendPush) {
       try {
