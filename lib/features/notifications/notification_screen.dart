@@ -60,6 +60,20 @@ class _NotificationScreenState extends State<NotificationScreen> {
         final data = n['data'] as Map<String, dynamic>?;
         if (data == null) return true;
 
+        // Check target_user_ids (specific student assigned notices)
+        if (data.containsKey('target_user_ids')) {
+          final tUsers = (data['target_user_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toSet() ?? {};
+          if (tUsers.isNotEmpty) {
+            if (tUsers.contains(user.id)) return true;
+            final tGroups = (data['target_group_ids'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toSet() ?? {};
+            if (tGroups.isEmpty) return false;
+          }
+        }
+
         // Check target_group_ids list
         if (data.containsKey('target_group_ids')) {
           final tGroups = (data['target_group_ids'] as List<dynamic>?)

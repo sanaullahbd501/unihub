@@ -134,6 +134,7 @@ class _NoticesScreenState extends ConsumerState<NoticesScreen> {
                       final eventTimeStr = item['event_time'] as String?;
                       final createdAtStr = item['created_at'] as String?;
                       final targetGroups = item['notice_target_groups'] as List<dynamic>? ?? [];
+                      final targetUsers = item['notice_target_users'] as List<dynamic>? ?? [];
 
                       final isEmergency = category == 'EMERGENCY';
                       final isExam = category == 'EXAM';
@@ -339,32 +340,58 @@ class _NoticesScreenState extends ConsumerState<NoticesScreen> {
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
-                                            if (targetGroups.isNotEmpty)
-                                              Row(
-                                                children: [
-                                                  const Text('Target: ', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-                                                  Wrap(
-                                                    spacing: 6,
-                                                    children: targetGroups.map<Widget>((tg) {
-                                                      final groupName = tg['class_groups']?['name'] ?? 'Group';
-                                                      return Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                        decoration: BoxDecoration(
-                                                          color: isEmergency ? Colors.red.shade100 : const Color(0xFFE2E8F0),
-                                                          borderRadius: BorderRadius.circular(4),
-                                                        ),
-                                                        child: Text(
-                                                          groupName,
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            fontWeight: FontWeight.w600,
-                                                            color: isEmergency ? Colors.red.shade900 : const Color(0xFF1E293B),
-                                                          ),
-                                                        ),
-                                                      );
-                                                    }).toList(),
-                                                  ),
-                                                ],
+                                            if (targetGroups.isNotEmpty || targetUsers.isNotEmpty)
+                                              Expanded(
+                                                child: Row(
+                                                  children: [
+                                                    const Text('Target: ', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                                                    Expanded(
+                                                      child: Wrap(
+                                                        spacing: 6,
+                                                        runSpacing: 4,
+                                                        children: [
+                                                          ...targetGroups.map<Widget>((tg) {
+                                                            final groupName = tg['class_groups']?['name'] ?? 'Group';
+                                                            return Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                              decoration: BoxDecoration(
+                                                                color: isEmergency ? Colors.red.shade100 : const Color(0xFFE2E8F0),
+                                                                borderRadius: BorderRadius.circular(4),
+                                                              ),
+                                                              child: Text(
+                                                                groupName,
+                                                                style: TextStyle(
+                                                                  fontSize: 11,
+                                                                  fontWeight: FontWeight.w600,
+                                                                  color: isEmergency ? Colors.red.shade900 : const Color(0xFF1E293B),
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }),
+                                                          ...targetUsers.map<Widget>((tu) {
+                                                            final userName = tu['users']?['full_name'] ?? 'Student';
+                                                            return Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                              decoration: BoxDecoration(
+                                                                color: Colors.indigo.shade50,
+                                                                borderRadius: BorderRadius.circular(4),
+                                                                border: Border.all(color: Colors.indigo.shade200),
+                                                              ),
+                                                              child: Text(
+                                                                '👤 $userName',
+                                                                style: TextStyle(
+                                                                  fontSize: 11,
+                                                                  fontWeight: FontWeight.w600,
+                                                                  color: Colors.indigo.shade900,
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               )
                                             else
                                               const SizedBox.shrink(),

@@ -43,6 +43,17 @@ class GroupsService {
 
     final normalizedCode = inviteCode.trim().toUpperCase();
 
+    // Check if code is already taken
+    final existing = await _supabase
+        .from('class_groups')
+        .select('id')
+        .ilike('invite_code', normalizedCode)
+        .maybeSingle();
+
+    if (existing != null) {
+      throw Exception('Invite code "$normalizedCode" is already in use by another group. Please choose a different code.');
+    }
+
     final group = await _supabase
         .from('class_groups')
         .insert({
@@ -50,12 +61,27 @@ class GroupsService {
           'name': name.trim(),
           'invite_code': normalizedCode,
           'description': description?.trim(),
+          'is_join_locked': false,
           'created_by': user.id,
         })
         .select()
         .single();
 
     return group;
+  }
+
+  /// Toggles whether students can join this group via invite code
+  Future<void> toggleGroupJoinLock({
+    required String groupId,
+    required bool isLocked,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
+
+    await _supabase
+        .from('class_groups')
+        .update({'is_join_locked': isLocked})
+        .eq('id', groupId);
   }
 
   /// Fetches classes created by user or where user is co-cr, along with groups
@@ -95,6 +121,139 @@ class GroupsService {
         .eq('id', groupId);
   }
 
+  /// Fetches members of a specific group (with user profile information)
+  Future<List<Map<String, dynamic>>> getGroupMembers(String groupId) async {
+    final members = await _supabase
+        .from('group_members')
+        .select('id, group_id, user_id, role, joined_at, users(id, full_name, email, role, avatar_url)')
+        .eq('group_id', groupId)
+        .order('joined_at', ascending: true);
+
+    return List<Map<String, dynamic>>.from(members);
+  }
+
+  /// Removes an enrolled student/member from a group (can be executed by CR)
+  Future<void> removeMember(String memberRecordId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
+
+    await _supabase
+        .from('group_members')
+        .delete()
+        .eq('id', memberRecordId);
+  }
+
+  /// Adds a student directly to a group by their registered email
+  Future<void> addMemberDirectly({
+    required String groupId,
+    required String email,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('User not logged in');
+
+    final targetUser = await _supabase
+        .from('users')
+        .select('id, full_name, email')
+        .eq('email', email.trim().toLowerCase())
+        .maybeSingle();
+
+    if (targetUser == null) {
+      throw Exception('User with email "$email" is not registered on UniHub yet.');
+    }
+
+    final targetUserId = targetUser['id'] as String;
+
+    // Check if already in group
+    final existing = await _supabase
+        .from('group_members')
+        .select('id')
+        .eq('group_id', groupId)
+        .eq('user_id', targetUserId)
+        .maybeSingle();
+
+    if (existing != null) {
+      throw Exception('This student is already a member of this section.');
+    }
+
+    await _supabase.from('group_members').insert({
+      'group_id': groupId,
+      'user_id': targetUserId,
+      'role': 'student',
+    });
+  }
+
+  /// Fetches the CRs for a class (Class Creator + Co-CRs)
+  Future<Map<String, dynamic>> getClassCRs(String classId) async {
+    final cls = await _supabase
+        .from('classes')
+        .select('id, name, created_by, users:created_by(id, full_name, email, role, avatar_url)')
+        .eq('id', classId)
+        .maybeSingle();
+
+    final coCrs = await _supabase
+        .from('class_co_crs')
+        .select('id, user_id, users(id, full_name, email, role, avatar_url)')
+        .eq('class_id', classId);
+
+    return {
+      'creator': cls?['users'],
+      'co_crs': List<Map<String, dynamic>>.from(coCrs),
+    };
+  }
+
+  /// Fetches all enrolled students across all managed class groups for notice targeting
+  Future<List<Map<String, dynamic>>> getAllStudentsInManagedClasses() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return [];
+
+    final classes = await getMyManagedClasses();
+    final allGroupIds = <String>[];
+    final groupNameMap = <String, String>{};
+
+    for (final c in classes) {
+      final grps = c['class_groups'] as List<dynamic>? ?? [];
+      for (final g in grps) {
+        final gid = g['id'] as String;
+        allGroupIds.add(gid);
+        groupNameMap[gid] = '${c['name']} - ${g['name']}';
+      }
+    }
+
+    if (allGroupIds.isEmpty) return [];
+
+    final res = await _supabase
+        .from('group_members')
+        .select('id, user_id, group_id, users(id, full_name, email, avatar_url)')
+        .inFilter('group_id', allGroupIds);
+
+    final seenUsers = <String, Map<String, dynamic>>{};
+    for (final m in res) {
+      final u = m['users'] as Map<String, dynamic>?;
+      if (u != null) {
+        final uid = u['id'] as String;
+        final gid = m['group_id'] as String;
+        final groupLabel = groupNameMap[gid] ?? 'Section';
+
+        if (seenUsers.containsKey(uid)) {
+          final existingGroups = seenUsers[uid]!['groups'] as List<String>;
+          if (!existingGroups.contains(groupLabel)) {
+            existingGroups.add(groupLabel);
+          }
+        } else {
+          seenUsers[uid] = {
+            'id': uid,
+            'full_name': u['full_name'] ?? 'Student',
+            'email': u['email'] ?? '',
+            'avatar_url': u['avatar_url'],
+            'groups': [groupLabel],
+          };
+        }
+      }
+    }
+
+    return seenUsers.values.toList();
+  }
+
   /// Fetches groups the current user is enrolled in as a Student
   Future<List<Map<String, dynamic>>> getMyEnrolledGroups() async {
     final user = _supabase.auth.currentUser;
@@ -102,7 +261,7 @@ class GroupsService {
 
     final res = await _supabase
         .from('group_members')
-        .select('group_id, role, joined_at, class_groups(id, name, invite_code, class_id, classes(name, department_name, university_name))')
+        .select('group_id, role, joined_at, class_groups(id, name, invite_code, is_join_locked, class_id, classes(name, department_name, university_name))')
         .eq('user_id', user.id)
         .eq('role', 'student');
 
@@ -131,12 +290,19 @@ class GroupsService {
     // Find group
     final group = await _supabase
         .from('class_groups')
-        .select('id, name, class_id, classes(name)')
+        .select('id, name, class_id, is_join_locked, classes(name)')
         .eq('invite_code', normalized)
         .maybeSingle();
 
     if (group == null) {
       throw Exception('Invalid invite code: "$code". Please verify with your CR.');
+    }
+
+    // Check if group is locked by CR
+    if (group['is_join_locked'] == true) {
+      throw Exception(
+        'This section "${group['name']}" is currently LOCKED by the CR. Students cannot join via code. Please contact your CR to add you directly.',
+      );
     }
 
     final groupId = group['id'] as String;

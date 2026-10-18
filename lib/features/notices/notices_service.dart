@@ -8,7 +8,7 @@ final noticesServiceProvider = Provider<NoticesService>((ref) {
 class NoticesService {
   final _supabase = SupabaseService.client;
 
-  /// Fetches active notices targeted to the current user's enrolled groups (or created by CR)
+  /// Fetches active notices targeted to the current user's enrolled groups or directly to the user (or created by CR)
   Future<List<Map<String, dynamic>>> getNotices() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return [];
@@ -16,7 +16,7 @@ class NoticesService {
     final nowIso = DateTime.now().toUtc().toIso8601String();
     final res = await _supabase
         .from('notices')
-        .select('*, notice_target_groups(group_id, class_groups(id, name, invite_code))')
+        .select('*, notice_target_groups(group_id, class_groups(id, name, invite_code)), notice_target_users(user_id, users(id, full_name, email))')
         .or('is_permanent.eq.true,expires_at.is.null,expires_at.gt.$nowIso')
         .order('created_at', ascending: false);
 
@@ -47,10 +47,21 @@ class NoticesService {
       // 2. Admins see all notices
       if (role == 'admin') return true;
 
+      final targetUsers = notice['notice_target_users'] as List<dynamic>? ?? [];
+      final isDirectlyAssignedToUser = targetUsers.any((u) => u['user_id']?.toString() == user.id);
+
+      // If directly assigned to this user, they always see it
+      if (isDirectlyAssignedToUser) return true;
+
       final targetGroups = notice['notice_target_groups'] as List<dynamic>? ?? [];
 
-      // 3. If notice has no specific target groups, it's a general announcement
-      if (targetGroups.isEmpty) return true;
+      // If the notice is assigned only to specific students (no groups), other students shouldn't see it
+      if (targetUsers.isNotEmpty && targetGroups.isEmpty) {
+        return false;
+      }
+
+      // 3. If notice has no specific target groups and no specific users, it's a general announcement
+      if (targetGroups.isEmpty && targetUsers.isEmpty) return true;
 
       // 4. Otherwise, user must be enrolled in at least one of the target groups
       final noticeTargetGroupIds = targetGroups
@@ -70,20 +81,26 @@ class NoticesService {
     // 1. Delete target group mappings
     await _supabase.from('notice_target_groups').delete().eq('notice_id', noticeId);
 
-    // 2. Delete related notification records from notifications table if any
+    // 2. Delete target user mappings
+    try {
+      await _supabase.from('notice_target_users').delete().eq('notice_id', noticeId);
+    } catch (_) {}
+
+    // 3. Delete related notification records from notifications table if any
     try {
       await _supabase.from('notifications').delete().eq('data->>notice_id', noticeId);
     } catch (_) {}
 
-    // 3. Delete the notice itself
+    // 4. Delete the notice itself
     await _supabase.from('notices').delete().eq('id', noticeId);
   }
 
-  /// Publishes a new notice, associates it with selected groups, and triggers Push Notification
+  /// Publishes a new notice, associates it with selected groups or individual students, and triggers Push Notification
   Future<Map<String, dynamic>> publishNotice({
     required String title,
     required String content,
-    required List<String> targetGroupIds,
+    List<String>? targetGroupIds,
+    List<String>? targetUserIds,
     String category = 'NOTICE',
     DateTime? eventTime,
     DateTime? customExpiry,
@@ -92,8 +109,12 @@ class NoticesService {
   }) async {
     final user = _supabase.auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
-    if (targetGroupIds.isEmpty) {
-      throw Exception('Please select at least one group (e.g. 95B, 95C) to receive this notice.');
+
+    final groupIds = targetGroupIds ?? [];
+    final userIds = targetUserIds ?? [];
+
+    if (groupIds.isEmpty && userIds.isEmpty) {
+      throw Exception('Please select at least one group or individual student to receive this notice.');
     }
 
     // Default expiry: 3 months (90 days) for semester cleanup, or custom expiry, unless permanent
@@ -102,6 +123,8 @@ class NoticesService {
       calculatedExpiry = customExpiry ?? DateTime.now().add(const Duration(days: 90));
     }
 
+    final targetType = (userIds.isNotEmpty && groupIds.isEmpty) ? 'USER' : 'GROUP';
+
     // 1. Insert notice
     final notice = await _supabase
         .from('notices')
@@ -109,7 +132,7 @@ class NoticesService {
           'title': title.trim(),
           'content': content.trim(),
           'category': category,
-          'target_type': 'GROUP',
+          'target_type': targetType,
           'event_time': eventTime?.toUtc().toIso8601String(),
           'expires_at': calculatedExpiry?.toUtc().toIso8601String(),
           'is_permanent': isPermanent,
@@ -122,25 +145,39 @@ class NoticesService {
     final noticeId = notice['id'] as String;
 
     // 2. Link target groups in notice_target_groups
-    final groupMappings = targetGroupIds.map((gid) => {
-      'notice_id': noticeId,
-      'group_id': gid,
-    }).toList();
+    if (groupIds.isNotEmpty) {
+      final groupMappings = groupIds.map((gid) => {
+        'notice_id': noticeId,
+        'group_id': gid,
+      }).toList();
 
-    await _supabase.from('notice_target_groups').insert(groupMappings);
+      await _supabase.from('notice_target_groups').insert(groupMappings);
+    }
 
-    // 2.1 Always record into notifications table so all students see it in their Notifications tab
+    // 3. Link target students in notice_target_users
+    if (userIds.isNotEmpty) {
+      final userMappings = userIds.map((uid) => {
+        'notice_id': noticeId,
+        'user_id': uid,
+      }).toList();
+
+      await _supabase.from('notice_target_users').insert(userMappings);
+    }
+
+    // 4. Record into notifications table
     try {
       await _supabase.from('notifications').insert({
         'title': title.trim(),
         'body': content.trim(),
         'type': category == 'EMERGENCY' ? 'EMERGENCY' : (category == 'ROUTINE' ? 'ROUTINE' : 'NOTICE'),
-        'target_type': 'GROUP',
+        'target_type': targetType,
+        'target_user_id': userIds.length == 1 ? userIds.first : null,
         'priority': category == 'EMERGENCY' ? 'HIGH' : 'NORMAL',
         'deep_link': '/notices',
         'data': {
           'notice_id': noticeId,
-          'target_group_ids': targetGroupIds,
+          'target_group_ids': groupIds,
+          'target_user_ids': userIds,
           'category': category,
         },
         'created_by': user.id,
@@ -149,7 +186,7 @@ class NoticesService {
       // Non-blocking
     }
 
-    // 3. Trigger Supabase Edge Function to dispatch FCM Push Notification
+    // 5. Trigger Supabase Edge Function to dispatch FCM Push Notification
     if (sendPush) {
       try {
         await _supabase.functions.invoke(
@@ -159,7 +196,8 @@ class NoticesService {
             'body': content.trim(),
             'type': category == 'EMERGENCY' ? 'EMERGENCY' : 'NOTICE',
             'deep_link': '/notices',
-            'target_group_ids': targetGroupIds,
+            'target_group_ids': groupIds,
+            'target_user_ids': userIds,
             'notice_id': noticeId,
             'created_by': user.id,
           },

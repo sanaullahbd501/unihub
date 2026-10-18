@@ -87,7 +87,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
         final emergencyNotices = await SupabaseService.client
             .from('notices')
-            .select('id, title, content, created_at, created_by, notice_target_groups(group_id)')
+            .select('id, title, content, created_at, created_by, notice_target_groups(group_id), notice_target_users(user_id)')
             .eq('category', 'EMERGENCY')
             .order('created_at', ascending: false)
             .limit(10);
@@ -99,8 +99,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             matchingEmergency = Map<String, dynamic>.from(en);
             break;
           }
+          final tu = en['notice_target_users'] as List<dynamic>? ?? [];
+          if (tu.any((u) => u['user_id']?.toString() == user.id)) {
+            matchingEmergency = Map<String, dynamic>.from(en);
+            break;
+          }
           final tg = en['notice_target_groups'] as List<dynamic>? ?? [];
-          if (tg.isEmpty) {
+          if (tg.isEmpty && tu.isEmpty) {
             matchingEmergency = Map<String, dynamic>.from(en);
             break;
           }

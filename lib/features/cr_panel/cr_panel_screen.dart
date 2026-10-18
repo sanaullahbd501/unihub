@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +26,9 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
   final _contentController = TextEditingController();
   String _selectedCategory = 'NOTICE';
   final Set<String> _selectedGroupIds = {};
+  final Set<String> _selectedStudentIds = {};
+  List<Map<String, dynamic>> _allStudents = [];
+  String _targetMode = 'GROUPS'; // 'GROUPS', 'STUDENTS', 'BOTH'
   DateTime? _selectedEventTime;
   DateTime? _selectedExpiryTime;
   bool _isPermanent = false;
@@ -70,6 +74,17 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
       }
     } catch (e) {
       debugPrint('Error loading routines/exams: $e');
+    }
+
+    try {
+      final students = await ref.read(groupsServiceProvider).getAllStudentsInManagedClasses();
+      if (mounted) {
+        setState(() {
+          _allStudents = students;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading students: $e');
     }
 
     if (mounted) {
@@ -170,7 +185,9 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
     final codeCtrl = TextEditingController();
 
     nameCtrl.addListener(() {
-      codeCtrl.text = nameCtrl.text.trim().toUpperCase();
+      if (codeCtrl.text.isEmpty || codeCtrl.text.startsWith(nameCtrl.text.trim().toUpperCase())) {
+        codeCtrl.text = nameCtrl.text.trim().toUpperCase();
+      }
     });
 
     final created = await showDialog<bool>(
@@ -191,10 +208,20 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
               const SizedBox(height: 12),
               TextField(
                 controller: codeCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Invite Code *',
-                  hintText: 'e.g. 95B',
+                  hintText: 'e.g. 95B or 95B-4819',
                   helperText: 'Students will use this code to join this group',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.shuffle_rounded),
+                    tooltip: 'Generate Unique Code (ইউনিক কোড তৈরি করুন)',
+                    onPressed: () {
+                      final prefix = nameCtrl.text.trim().replaceAll(' ', '').toUpperCase();
+                      final pfx = prefix.isEmpty ? 'GRP' : prefix;
+                      final rnd = 1000 + Random().nextInt(9000);
+                      codeCtrl.text = '$pfx-$rnd';
+                    },
+                  ),
                 ),
               ),
             ],
@@ -232,6 +259,348 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
     if (created == true) {
       _loadData();
     }
+  }
+
+  Future<void> _showGroupMembersDialog(
+    String classId,
+    String className,
+    String groupId,
+    String groupName,
+    bool initialIsLocked,
+  ) async {
+    bool isLocked = initialIsLocked;
+    final addEmailCtrl = TextEditingController();
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sheetCtx, setSheetState) {
+          return Container(
+            height: MediaQuery.of(sheetCtx).size.height * 0.85,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                    border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                  ),
+                  child: Row(
+                    children: [
+                      const CircleAvatar(
+                        backgroundColor: Color(0xFFEFF6FF),
+                        child: Icon(Icons.groups_rounded, color: Color(0xFF1E3A8A)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '$className - Section $groupName',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            const Text(
+                              'Student Roster & Permissions (ছাত্র তালিকা ও নিয়ন্ত্রণ)',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(sheetCtx),
+                      ),
+                    ],
+                  ),
+                ),
+                // Lock Toggle Banner
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isLocked ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: isLocked ? const Color(0xFFFECACA) : const Color(0xFFBBF7D0)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                        color: isLocked ? Colors.red.shade700 : Colors.green.shade700,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isLocked
+                                  ? 'Joining is LOCKED (লক করা)'
+                                  : 'Joining is OPEN (উন্মুক্ত)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: isLocked ? Colors.red.shade900 : Colors.green.shade900,
+                                fontSize: 14,
+                              ),
+                            ),
+                            Text(
+                              isLocked
+                                  ? 'Students cannot join via code. Only CR can add students.'
+                                  : 'Students can join this section using the invite code.',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: isLocked,
+                        activeThumbColor: Colors.red,
+                        onChanged: (val) async {
+                          try {
+                            await ref.read(groupsServiceProvider).toggleGroupJoinLock(
+                              groupId: groupId,
+                              isLocked: val,
+                            );
+                            setSheetState(() => isLocked = val);
+                            _loadData();
+                          } catch (e) {
+                            if (sheetCtx.mounted) {
+                              ScaffoldMessenger.of(sheetCtx).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                // Direct Add by Email Row
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: addEmailCtrl,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: 'Add student by email (সরাসরি এড করুন)',
+                            hintStyle: const TextStyle(fontSize: 13),
+                            prefixIcon: const Icon(Icons.person_add_alt_1, size: 18),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (addEmailCtrl.text.trim().isEmpty) return;
+                          try {
+                            await ref.read(groupsServiceProvider).addMemberDirectly(
+                              groupId: groupId,
+                              email: addEmailCtrl.text.trim(),
+                            );
+                            addEmailCtrl.clear();
+                            setSheetState(() {});
+                            _loadData();
+                            if (sheetCtx.mounted) {
+                              ScaffoldMessenger.of(sheetCtx).showSnackBar(
+                                const SnackBar(content: Text('Student successfully enrolled!')),
+                              );
+                            }
+                          } catch (e) {
+                            if (sheetCtx.mounted) {
+                              ScaffoldMessenger.of(sheetCtx).showSnackBar(
+                                SnackBar(content: Text('Error: $e')),
+                              );
+                            }
+                          }
+                        },
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // CRs and Students Lists
+                Expanded(
+                  child: FutureBuilder<List<dynamic>>(
+                    future: Future.wait([
+                      ref.read(groupsServiceProvider).getClassCRs(classId),
+                      ref.read(groupsServiceProvider).getGroupMembers(groupId),
+                    ]),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}'));
+                      }
+
+                      final crData = snapshot.data![0] as Map<String, dynamic>;
+                      final members = snapshot.data![1] as List<Map<String, dynamic>>;
+
+                      final creator = crData['creator'] as Map<String, dynamic>?;
+                      final coCrs = crData['co_crs'] as List<Map<String, dynamic>>? ?? [];
+
+                      return ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          // CR Section
+                          const Text(
+                            'Class Representatives (CR)',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                          ),
+                          const SizedBox(height: 6),
+                          if (creator != null)
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const CircleAvatar(
+                                backgroundColor: Color(0xFF1E3A8A),
+                                child: Icon(Icons.star, color: Colors.amber, size: 18),
+                              ),
+                              title: Text(creator['full_name'] ?? 'CR', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text(creator['email'] ?? ''),
+                              trailing: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text('Main CR', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown)),
+                              ),
+                            ),
+                          ...coCrs.map((cc) {
+                            final u = cc['users'] as Map<String, dynamic>?;
+                            return ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const CircleAvatar(
+                                backgroundColor: Color(0xFFEFF6FF),
+                                child: Icon(Icons.shield, color: Color(0xFF1E3A8A), size: 18),
+                              ),
+                              title: Text(u?['full_name'] ?? 'Co-CR', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text(u?['email'] ?? ''),
+                              trailing: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text('Co-CR', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+                              ),
+                            );
+                          }),
+                          const Divider(height: 24),
+                          // Students Section
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Enrolled Students (${members.length})',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          if (members.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.person_off_outlined, size: 40, color: Colors.grey.shade400),
+                                  const SizedBox(height: 8),
+                                  const Text('No students have joined this section yet.', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                ],
+                              ),
+                            )
+                          else
+                            ...members.map((m) {
+                              final u = m['users'] as Map<String, dynamic>?;
+                              final studentName = u?['full_name'] ?? 'Student';
+                              final studentEmail = u?['email'] ?? '';
+                              final memberId = m['id'] as String;
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(color: Colors.grey.shade200),
+                                ),
+                                child: ListTile(
+                                  dense: true,
+                                  leading: CircleAvatar(
+                                    backgroundColor: const Color(0xFF1E3A8A).withValues(alpha: 0.1),
+                                    child: Text(
+                                      studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+                                    ),
+                                  ),
+                                  title: Text(studentName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  subtitle: Text(studentEmail, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.person_remove_rounded, color: Colors.red, size: 20),
+                                    tooltip: 'Remove student (রিমুভ করুন)',
+                                    onPressed: () async {
+                                      final confirm = await showDialog<bool>(
+                                        context: sheetCtx,
+                                        builder: (c) => AlertDialog(
+                                          title: const Text('Remove Student'),
+                                          content: Text('Are you sure you want to remove "$studentName" from section "$groupName"?\n\nThey will immediately lose access to this section.'),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.pop(c, true),
+                                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                              child: const Text('Remove'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (confirm == true) {
+                                        try {
+                                          await ref.read(groupsServiceProvider).removeMember(memberId);
+                                          setSheetState(() {});
+                                          _loadData();
+                                          if (sheetCtx.mounted) {
+                                            ScaffoldMessenger.of(sheetCtx).showSnackBar(
+                                              SnackBar(content: Text('Removed "$studentName" from $groupName.')),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          if (sheetCtx.mounted) {
+                                            ScaffoldMessenger.of(sheetCtx).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                                          }
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ),
+                              );
+                            }),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _showAddCoCrDialog(String classId) async {
@@ -445,9 +814,9 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
       );
       return;
     }
-    if (_selectedGroupIds.isEmpty) {
+    if (_selectedGroupIds.isEmpty && _selectedStudentIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one group (e.g. 95B, 95C) to target.')),
+        const SnackBar(content: Text('Please select at least one group or individual student to target.')),
       );
       return;
     }
@@ -459,6 +828,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
         content: _contentController.text.trim(),
         category: _selectedCategory,
         targetGroupIds: _selectedGroupIds.toList(),
+        targetUserIds: _selectedStudentIds.toList(),
         eventTime: _selectedEventTime,
         customExpiry: _selectedExpiryTime,
         isPermanent: _isPermanent,
@@ -471,6 +841,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
           _titleController.clear();
           _contentController.clear();
           _selectedGroupIds.clear();
+          _selectedStudentIds.clear();
           _selectedEventTime = null;
           _selectedExpiryTime = null;
           _isPermanent = false;
@@ -690,23 +1061,81 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                               final gId = g['id'] as String;
                               final gName = g['name'] ?? '';
                               final code = g['invite_code'] ?? '';
+                              final isLocked = g['is_join_locked'] == true;
+
                               return Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEFF6FF),
+                                  color: isLocked ? const Color(0xFFFEF2F2) : const Color(0xFFEFF6FF),
                                   borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                                  border: Border.all(color: isLocked ? const Color(0xFFFECACA) : const Color(0xFFBFDBFE)),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.group, size: 16, color: Color(0xFF1E3A8A)),
+                                    Icon(
+                                      isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                                      size: 16,
+                                      color: isLocked ? Colors.red.shade700 : const Color(0xFF1E3A8A),
+                                    ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      '$gName (Code: $code)',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                                      '$gName ($code)',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: isLocked ? Colors.red.shade900 : const Color(0xFF1E3A8A),
+                                      ),
                                     ),
                                     const SizedBox(width: 8),
+                                    // Lock / Unlock toggle button
+                                    InkWell(
+                                      onTap: () async {
+                                        final messenger = ScaffoldMessenger.of(context);
+                                        try {
+                                          await ref.read(groupsServiceProvider).toggleGroupJoinLock(
+                                            groupId: gId,
+                                            isLocked: !isLocked,
+                                          );
+                                          _loadData();
+                                          if (mounted) {
+                                            messenger.showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  !isLocked
+                                                      ? 'Section "$gName" is now LOCKED (শুধু CR এড করতে পারবে)'
+                                                      : 'Section "$gName" is now OPEN for joining with code',
+                                                ),
+                                                backgroundColor: !isLocked ? Colors.red.shade800 : Colors.green.shade800,
+                                              ),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          if (mounted) {
+                                            messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+                                          }
+                                        }
+                                      },
+                                      child: Tooltip(
+                                        message: isLocked ? 'Locked: Click to open joining' : 'Open: Click to lock joining',
+                                        child: Icon(
+                                          isLocked ? Icons.lock : Icons.lock_open,
+                                          size: 16,
+                                          color: isLocked ? Colors.red : Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // View Members Roster button
+                                    InkWell(
+                                      onTap: () => _showGroupMembersDialog(classId, className, gId, gName, isLocked),
+                                      child: const Tooltip(
+                                        message: 'View & Manage Students (ছাত্র তালিকা)',
+                                        child: Icon(Icons.people_alt_outlined, size: 16, color: Color(0xFF1E3A8A)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Copy invite code button
                                     InkWell(
                                       onTap: () {
                                         Clipboard.setData(ClipboardData(text: code));
@@ -720,6 +1149,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                                       ),
                                     ),
                                     const SizedBox(width: 8),
+                                    // Delete section button
                                     InkWell(
                                       onTap: () => _confirmDeleteGroup(gId, gName),
                                       child: const Tooltip(
@@ -759,85 +1189,199 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Target Groups (Multi-Select)',
+                    'Target Audience (নোটিশ প্রাপক নির্ধারণ)',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Select which groups (e.g. 95B, 95C) will receive this notice & push alert:',
+                    'Select whether this notice goes to whole groups, specific students by name, or both:',
                     style: TextStyle(fontSize: 13, color: Colors.grey),
                   ),
                   const SizedBox(height: 12),
-                  if (groups.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.orange),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Please create at least one class group (e.g. 95B) in the "Classes & Groups" tab first.',
-                              style: TextStyle(fontSize: 13),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else ...[
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'GROUPS', label: Text('Groups / Sections')),
+                      ButtonSegment(value: 'STUDENTS', label: Text('Specific Students (নির্দিষ্ট ছাত্র-ছাত্রী)')),
+                      ButtonSegment(value: 'BOTH', label: Text('Both')),
+                    ],
+                    selected: {_targetMode},
+                    onSelectionChanged: (val) {
+                      setState(() => _targetMode = val.first);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  if (_targetMode == 'GROUPS' || _targetMode == 'BOTH') ...[
                     Row(
                       children: [
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedGroupIds.addAll(groups.map((g) => g['id'] as String));
-                            });
-                          },
-                          child: const Text('Select All'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedGroupIds.clear();
-                            });
-                          },
-                          child: const Text('Clear All'),
+                        const Text(
+                          'Target Groups (Multi-Select):',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
                         ),
                         const Spacer(),
-                        Text(
-                          '${_selectedGroupIds.length} of ${groups.length} selected',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
+                        if (groups.isNotEmpty) ...[
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedGroupIds.addAll(groups.map((g) => g['id'] as String));
+                              });
+                            },
+                            child: const Text('All'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedGroupIds.clear();
+                              });
+                            },
+                            child: const Text('Clear'),
+                          ),
+                          Text(
+                            '(${_selectedGroupIds.length}/${groups.length})',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ],
                       ],
                     ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: groups.map((g) {
-                        final gId = g['id'] as String;
-                        final gName = g['name'] ?? '';
-                        final isSelected = _selectedGroupIds.contains(gId);
-                        return FilterChip(
-                          selected: isSelected,
-                          label: Text(gName),
-                          selectedColor: const Color(0xFF1E3A8A).withValues(alpha: 0.2),
-                          checkmarkColor: const Color(0xFF1E3A8A),
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedGroupIds.add(gId);
-                              } else {
-                                _selectedGroupIds.remove(gId);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
+                    const SizedBox(height: 6),
+                    if (groups.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Please create at least one section in the "Classes & Groups" tab first.',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: groups.map((g) {
+                          final gId = g['id'] as String;
+                          final gName = g['name'] ?? '';
+                          final className = g['class_name'] ?? '';
+                          final isSelected = _selectedGroupIds.contains(gId);
+                          return FilterChip(
+                            selected: isSelected,
+                            label: Text('$className - $gName'),
+                            selectedColor: const Color(0xFF1E3A8A).withValues(alpha: 0.2),
+                            checkmarkColor: const Color(0xFF1E3A8A),
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedGroupIds.add(gId);
+                                } else {
+                                  _selectedGroupIds.remove(gId);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_targetMode == 'STUDENTS' || _targetMode == 'BOTH') ...[
+                    Row(
+                      children: [
+                        const Text(
+                          'Assign to Specific Students (নাম অনুযায়ী নির্ধারণ):',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                        ),
+                        const Spacer(),
+                        if (_allStudents.isNotEmpty) ...[
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedStudentIds.addAll(_allStudents.map((s) => s['id'] as String));
+                              });
+                            },
+                            child: const Text('All'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedStudentIds.clear();
+                              });
+                            },
+                            child: const Text('Clear'),
+                          ),
+                          Text(
+                            '(${_selectedStudentIds.length}/${_allStudents.length})',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ],
+                      ],
                     ),
+                    const SizedBox(height: 6),
+                    if (_allStudents.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Color(0xFF1E3A8A)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'No enrolled students found in your managed sections yet. Once students join with invite codes, their names will appear here.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _allStudents.map((s) {
+                          final sId = s['id'] as String;
+                          final sName = s['full_name'] ?? 'Student';
+                          final isSelected = _selectedStudentIds.contains(sId);
+                          final groupsStr = (s['groups'] as List<String>?)?.join(', ') ?? '';
+
+                          return FilterChip(
+                            selected: isSelected,
+                            avatar: CircleAvatar(
+                              backgroundColor: isSelected ? const Color(0xFF1E3A8A) : Colors.grey.shade300,
+                              child: Text(
+                                sName.isNotEmpty ? sName[0].toUpperCase() : 'S',
+                                style: TextStyle(
+                                  color: isSelected ? Colors.white : Colors.black87,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            label: Text('$sName ($groupsStr)'),
+                            selectedColor: const Color(0xFF1E3A8A).withValues(alpha: 0.2),
+                            checkmarkColor: const Color(0xFF1E3A8A),
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedStudentIds.add(sId);
+                                } else {
+                                  _selectedStudentIds.remove(sId);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
                   ],
                 ],
               ),
@@ -1523,8 +2067,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
       return;
     }
 
-    String selectedGroupId = _allGroups.first['id'];
-    String selectedClassId = _allGroups.first['class_id'];
+    final Set<String> selectedGroupIds = {_allGroups.first['id']};
     final subjectCtrl = TextEditingController();
     final teacherCtrl = TextEditingController();
     final roomCtrl = TextEditingController(text: 'Room 402');
@@ -1556,24 +2099,48 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedGroupId,
-                    decoration: const InputDecoration(labelText: 'Target Section / Group *'),
-                    items: _allGroups.map((g) {
-                      return DropdownMenuItem<String>(
-                        value: g['id'],
-                        child: Text('${g['class_name']} - Section ${g['name']}'),
+                  Row(
+                    children: [
+                      const Text(
+                        'Target Sections * (একাধিক সিলেক্ট করুন):',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => setModalState(() {
+                          selectedGroupIds.addAll(_allGroups.map((g) => g['id'] as String));
+                        }),
+                        child: const Text('All', style: TextStyle(fontSize: 12)),
+                      ),
+                      TextButton(
+                        onPressed: () => setModalState(() => selectedGroupIds.clear()),
+                        child: const Text('Clear', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: _allGroups.map((g) {
+                      final gId = g['id'] as String;
+                      final isSelected = selectedGroupIds.contains(gId);
+                      return FilterChip(
+                        selected: isSelected,
+                        label: Text('${g['class_name']} - ${g['name']}'),
+                        selectedColor: const Color(0xFF1E3A8A).withValues(alpha: 0.2),
+                        checkmarkColor: const Color(0xFF1E3A8A),
+                        onSelected: (val) {
+                          setModalState(() {
+                            if (val) {
+                              selectedGroupIds.add(gId);
+                            } else {
+                              selectedGroupIds.remove(gId);
+                            }
+                          });
+                        },
                       );
                     }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setModalState(() {
-                          selectedGroupId = val;
-                          final match = _allGroups.firstWhere((g) => g['id'] == val);
-                          selectedClassId = match['class_id'];
-                        });
-                      }
-                    },
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -1663,13 +2230,21 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
               ElevatedButton(
                 onPressed: () async {
                   if (subjectCtrl.text.trim().isEmpty) return;
+                  if (selectedGroupIds.isEmpty) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Please select at least one section for this class routine.')),
+                    );
+                    return;
+                  }
+                  final firstMatched = _allGroups.firstWhere((g) => selectedGroupIds.contains(g['id']));
+                  final classId = firstMatched['class_id'] as String;
                   final startStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
                   final endStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
 
                   try {
                     await ref.read(routineServiceProvider).saveRoutine(
-                      classId: selectedClassId,
-                      groupId: selectedGroupId,
+                      classId: classId,
+                      groupIds: selectedGroupIds.toList(),
                       subject: subjectCtrl.text.trim(),
                       teacherName: teacherCtrl.text.trim().isEmpty ? null : teacherCtrl.text.trim(),
                       dayOfWeek: selectedDay,
@@ -1705,8 +2280,7 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
       return;
     }
 
-    String selectedGroupId = _allGroups.first['id'];
-    String selectedClassId = _allGroups.first['class_id'];
+    final Set<String> selectedGroupIds = {_allGroups.first['id']};
     final subjectCtrl = TextEditingController();
     final roomCtrl = TextEditingController(text: 'Room 501');
     final linkCtrl = TextEditingController(text: 'https://meet.google.com/');
@@ -1735,24 +2309,48 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedGroupId,
-                    decoration: const InputDecoration(labelText: 'Target Section / Group *'),
-                    items: _allGroups.map((g) {
-                      return DropdownMenuItem<String>(
-                        value: g['id'],
-                        child: Text('${g['class_name']} - Section ${g['name']}'),
+                  Row(
+                    children: [
+                      const Text(
+                        'Target Sections * (একাধিক সিলেক্ট করুন):',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => setModalState(() {
+                          selectedGroupIds.addAll(_allGroups.map((g) => g['id'] as String));
+                        }),
+                        child: const Text('All', style: TextStyle(fontSize: 12)),
+                      ),
+                      TextButton(
+                        onPressed: () => setModalState(() => selectedGroupIds.clear()),
+                        child: const Text('Clear', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: _allGroups.map((g) {
+                      final gId = g['id'] as String;
+                      final isSelected = selectedGroupIds.contains(gId);
+                      return FilterChip(
+                        selected: isSelected,
+                        label: Text('${g['class_name']} - ${g['name']}'),
+                        selectedColor: const Color(0xFF1E3A8A).withValues(alpha: 0.2),
+                        checkmarkColor: const Color(0xFF1E3A8A),
+                        onSelected: (val) {
+                          setModalState(() {
+                            if (val) {
+                              selectedGroupIds.add(gId);
+                            } else {
+                              selectedGroupIds.remove(gId);
+                            }
+                          });
+                        },
                       );
                     }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setModalState(() {
-                          selectedGroupId = val;
-                          final match = _allGroups.firstWhere((g) => g['id'] == val);
-                          selectedClassId = match['class_id'];
-                        });
-                      }
-                    },
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -1870,13 +2468,21 @@ class _CrPanelScreenState extends ConsumerState<CrPanelScreen> with SingleTicker
               ElevatedButton(
                 onPressed: () async {
                   if (subjectCtrl.text.trim().isEmpty) return;
+                  if (selectedGroupIds.isEmpty) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Please select at least one section for this exam.')),
+                    );
+                    return;
+                  }
+                  final firstMatched = _allGroups.firstWhere((g) => selectedGroupIds.contains(g['id']));
+                  final classId = firstMatched['class_id'] as String;
                   final startStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
                   final endStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
 
                   try {
                     await ref.read(routineServiceProvider).saveExam(
-                      classId: selectedClassId,
-                      groupId: selectedGroupId,
+                      classId: classId,
+                      groupIds: selectedGroupIds.toList(),
                       subject: subjectCtrl.text.trim(),
                       examType: examType,
                       examDate: examDate,

@@ -18,11 +18,12 @@ class RoutineService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  /// Saves or updates a weekly class routine entry
+  /// Saves or updates weekly class routine entries for one or multiple groups
   Future<void> saveRoutine({
     String? id,
     required String classId,
-    required String groupId,
+    String? groupId,
+    List<String>? groupIds,
     required String subject,
     String? teacherName,
     required int dayOfWeek, // 1=Mon, 7=Sun
@@ -33,38 +34,52 @@ class RoutineService {
     String? meetingLink,
     bool dispatchInitialAlert = true,
   }) async {
-    final payload = {
-      'class_id': classId,
-      'group_id': groupId,
-      'subject': subject.trim(),
-      'teacher_name': teacherName?.trim(),
-      'day_of_week': dayOfWeek,
-      'start_time': startTime,
-      'end_time': endTime,
-      'is_online': isOnline,
-      'room_number': isOnline ? null : roomNumber?.trim(),
-      'meeting_link': isOnline ? meetingLink?.trim() : null,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    };
+    final targetGroupIds = <String>{
+      if (groupId != null && groupId.isNotEmpty) groupId,
+      ...?groupIds,
+    }.toList();
 
-    if (id != null && id.isNotEmpty) {
-      await _supabase.from('routines').update(payload).eq('id', id);
-    } else {
-      await _supabase.from('routines').insert(payload);
+    if (targetGroupIds.isEmpty) {
+      throw Exception('Please select at least one group for this class routine.');
     }
 
-    if (dispatchInitialAlert) {
-      final days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      final dayName = (dayOfWeek >= 1 && dayOfWeek <= 7) ? days[dayOfWeek] : '';
-      await sendRoutineReminder(
-        groupId: groupId,
-        subject: subject,
-        intervalLabel: 'Class Scheduled',
-        startTime: '$dayName at ${startTime.substring(0, 5)}',
-        isOnline: isOnline,
-        roomNumber: roomNumber,
-        meetingLink: meetingLink,
-      );
+    final days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final dayName = (dayOfWeek >= 1 && dayOfWeek <= 7) ? days[dayOfWeek] : '';
+
+    for (final gid in targetGroupIds) {
+      final payload = {
+        'class_id': classId,
+        'group_id': gid,
+        'subject': subject.trim(),
+        'teacher_name': teacherName?.trim(),
+        'day_of_week': dayOfWeek,
+        'start_time': startTime,
+        'end_time': endTime,
+        'is_online': isOnline,
+        'room_number': isOnline ? null : roomNumber?.trim(),
+        'meeting_link': isOnline ? meetingLink?.trim() : null,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      if (id != null && id.isNotEmpty && targetGroupIds.length == 1) {
+        await _supabase.from('routines').update(payload).eq('id', id);
+      } else {
+        await _supabase.from('routines').insert(payload);
+      }
+
+      if (dispatchInitialAlert) {
+        try {
+          await sendRoutineReminder(
+            groupId: gid,
+            subject: subject,
+            intervalLabel: 'Class Scheduled',
+            startTime: '$dayName at ${startTime.substring(0, 5)}',
+            isOnline: isOnline,
+            roomNumber: roomNumber,
+            meetingLink: meetingLink,
+          );
+        } catch (_) {}
+      }
     }
   }
 
@@ -89,10 +104,11 @@ class RoutineService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  /// Adds a new exam with auto-deletion scheduled 3 hours after end_time
+  /// Adds a new exam for one or multiple groups with auto-deletion scheduled 3 hours after end_time
   Future<void> saveExam({
     required String classId,
-    required String groupId,
+    String? groupId,
+    List<String>? groupIds,
     required String subject,
     required String examType, // CT, MID, FINAL, QUIZ
     required DateTime examDate,
@@ -103,40 +119,53 @@ class RoutineService {
     String? meetingLink,
     bool dispatchAlert = true,
   }) async {
+    final targetGroupIds = <String>{
+      if (groupId != null && groupId.isNotEmpty) groupId,
+      ...?groupIds,
+    }.toList();
+
+    if (targetGroupIds.isEmpty) {
+      throw Exception('Please select at least one group for this exam schedule.');
+    }
+
     // Calculate exact end datetime and delete_at = end_time + 3 hours
     final endParts = endTime.split(':');
     final endHour = int.tryParse(endParts[0]) ?? 12;
     final endMin = int.tryParse(endParts[1]) ?? 0;
     final examEndDateTime = DateTime(examDate.year, examDate.month, examDate.day, endHour, endMin);
     final deleteAt = examEndDateTime.add(const Duration(hours: 3));
+    final dateStr = examDate.toIso8601String().substring(0, 10);
 
-    final payload = {
-      'class_id': classId,
-      'group_id': groupId,
-      'subject': subject.trim(),
-      'exam_type': examType,
-      'exam_date': examDate.toIso8601String().substring(0, 10),
-      'start_time': startTime,
-      'end_time': endTime,
-      'room_number': isOnline ? null : roomNumber?.trim(),
-      'is_online': isOnline,
-      'meeting_link': isOnline ? meetingLink?.trim() : null,
-      'delete_at': deleteAt.toUtc().toIso8601String(),
-    };
+    for (final gid in targetGroupIds) {
+      final payload = {
+        'class_id': classId,
+        'group_id': gid,
+        'subject': subject.trim(),
+        'exam_type': examType,
+        'exam_date': dateStr,
+        'start_time': startTime,
+        'end_time': endTime,
+        'room_number': isOnline ? null : roomNumber?.trim(),
+        'is_online': isOnline,
+        'meeting_link': isOnline ? meetingLink?.trim() : null,
+        'delete_at': deleteAt.toUtc().toIso8601String(),
+      };
 
-    await _supabase.from('exams').insert(payload);
+      await _supabase.from('exams').insert(payload);
 
-    if (dispatchAlert) {
-      final dateStr = examDate.toIso8601String().substring(0, 10);
-      await sendRoutineReminder(
-        groupId: groupId,
-        subject: '$examType Exam: $subject',
-        intervalLabel: 'Exam Alert',
-        startTime: '$dateStr at ${startTime.substring(0, 5)}',
-        isOnline: isOnline,
-        roomNumber: roomNumber,
-        meetingLink: meetingLink,
-      );
+      if (dispatchAlert) {
+        try {
+          await sendRoutineReminder(
+            groupId: gid,
+            subject: '$examType Exam: $subject',
+            intervalLabel: 'Exam Alert',
+            startTime: '$dateStr at ${startTime.substring(0, 5)}',
+            isOnline: isOnline,
+            roomNumber: roomNumber,
+            meetingLink: meetingLink,
+          );
+        } catch (_) {}
+      }
     }
   }
 
