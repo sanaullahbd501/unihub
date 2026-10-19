@@ -186,18 +186,54 @@ class GroupsService {
   Future<Map<String, dynamic>> getClassCRs(String classId) async {
     final cls = await _supabase
         .from('classes')
-        .select('id, name, created_by, users:created_by(id, full_name, email, role, avatar_url)')
+        .select('id, name, created_by')
         .eq('id', classId)
         .maybeSingle();
 
-    final coCrs = await _supabase
-        .from('class_co_crs')
-        .select('id, user_id, users(id, full_name, email, role, avatar_url)')
-        .eq('class_id', classId);
+    Map<String, dynamic>? creatorUser;
+    final createdBy = cls?['created_by']?.toString();
+    if (createdBy != null && createdBy.isNotEmpty) {
+      try {
+        creatorUser = await _supabase
+            .from('users')
+            .select('id, full_name, email, role, avatar_url')
+            .eq('id', createdBy)
+            .maybeSingle();
+      } catch (_) {}
+    }
+
+    List<Map<String, dynamic>> coCrsList = [];
+    try {
+      final coCrs = await _supabase
+          .from('class_co_crs')
+          .select('id, user_id, users(id, full_name, email, role, avatar_url)')
+          .eq('class_id', classId);
+      coCrsList = List<Map<String, dynamic>>.from(coCrs);
+    } catch (_) {
+      try {
+        final coCrs = await _supabase
+            .from('class_co_crs')
+            .select('id, user_id')
+            .eq('class_id', classId);
+        for (final item in (coCrs as List)) {
+          final uid = item['user_id'];
+          final u = await _supabase
+              .from('users')
+              .select('id, full_name, email, role, avatar_url')
+              .eq('id', uid)
+              .maybeSingle();
+          coCrsList.add({
+            'id': item['id'],
+            'user_id': uid,
+            'users': u,
+          });
+        }
+      } catch (_) {}
+    }
 
     return {
-      'creator': cls?['users'],
-      'co_crs': List<Map<String, dynamic>>.from(coCrs),
+      'creator': creatorUser,
+      'co_crs': coCrsList,
     };
   }
 
