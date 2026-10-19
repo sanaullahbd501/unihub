@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/update_service.dart';
 import '../../shared/providers/auth_provider.dart';
 import '../groups/groups_service.dart';
 
@@ -29,6 +30,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Initialize push notifications
     ref.read(notificationServiceProvider).initialize();
     _subscribeToEmergencyRealtime();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.checkAndShowUpdateDialog(context);
+    });
   }
 
   @override
@@ -60,6 +64,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final myGroupIds = _myGroups.map((g) => g['group_id']?.toString()).whereType<String>().toSet();
 
                 if (isCreator || tgIds.isEmpty || myGroupIds.intersection(tgIds).isNotEmpty) {
+                  ref.read(notificationServiceProvider).showEmergencyNotification(
+                    title: newRecord['title'] ?? 'জরুরি নোটিশ / EMERGENCY ALERT',
+                    body: newRecord['content'] ?? '',
+                    data: {'deep_link': '/home', 'category': 'EMERGENCY'},
+                  );
                   if (mounted) {
                     setState(() => _latestEmergencyNotice = newRecord);
                     _showEmergencyFullScreenDialog(newRecord);
